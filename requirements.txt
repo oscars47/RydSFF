@@ -1,0 +1,5 @@
+qutip
+numpy
+bloqade_analog
+tqdm
+matplotlib
