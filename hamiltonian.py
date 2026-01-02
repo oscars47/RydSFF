@@ -3,8 +3,17 @@
 import numpy as np
 import qutip as qt
 
-def get_h_ls(n_q):
+def h_ls_trial(n_q):
     return np.random.uniform(0, 1, n_q)
+
+def h_ls_cond(arr, threshold):
+    return np.sum(np.abs(np.diff(arr)) < threshold) == 0
+
+def get_h_ls(n_q, threshold=0):
+    h_ls = h_ls_trial(n_q)
+    while not h_ls_cond(h_ls, threshold):
+        h_ls = h_ls_trial(n_q)
+    return h_ls
 
 def get_rand_x(a, eps_std, n_q):
     return [(i * a + np.random.normal(0, eps_std), np.random.normal(0, eps_std)) for i in range(n_q)]
