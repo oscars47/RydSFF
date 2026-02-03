@@ -46,6 +46,9 @@ def plot_results(N, Delta_local_ls, Delta_mean_ls, n_repeats, Omega, dir_root, f
                 pbar.update(1)
             
             median_eigenvals = np.array(median_eigenvals)
+            print(f"for Delta_local={Delta_local/J:.3g}J:")
+            print("median at Delta_mean=0:", median_eigenvals[np.abs(Delta_mean_ls).argmin()]/J)
+            print("median at Delta_mean = 0.5J:", median_eigenvals[np.abs(Delta_mean_ls - 0.5*J).argmin()]/J)
             ax.plot(Delta_mean_ls/J, median_eigenvals/J, label=rf'$\Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g}/J$', color=colors[j])
 
     ax.set_box_aspect(1)

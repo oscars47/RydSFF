@@ -7,8 +7,11 @@ import matplotlib.colors as mcolors
 from matplotlib.colors import LogNorm
 from fig_styling import style_axis
 from hamiltonian import drive_main, get_J_arr, H_int
+from expt_file_manager import ExptStore
 import qutip as qt
 import os
+from tqdm import trange
+
 
 
 def draw_bloch_sphere(ax, fontsize=20, show_theta_phi=True):
@@ -18,11 +21,11 @@ def draw_bloch_sphere(ax, fontsize=20, show_theta_phi=True):
     ys = np.outer(np.sin(u), np.sin(v))
     zs = np.outer(np.ones_like(u), np.cos(v))
 
-    ax.plot_surface(xs, ys, zs, alpha=0.3, linewidth=0.5, color='gray')
+    ax.plot_surface(xs, ys, zs, alpha=0.05, linewidth=0.5, color='gray')
     
     # Add state labels at poles using Computer Modern for g/r
-    ax.text(0, 0, 1.3, r'$|\mathcm{g}\rangle$', fontsize=fontsize, ha='center', va='center')
-    ax.text(0, 0, -1.3, r'$|\mathcm{r}\rangle$', fontsize=fontsize, ha='center', va='center')
+    ax.text(0, 0, 1.25, r'$|\mathcm{g}\rangle$', fontsize=fontsize, ha='center', va='center')
+    ax.text(0, 0, -1.25, r'$|\mathcm{r}\rangle$', fontsize=fontsize, ha='center', va='center')
     
     # Add coordinate circles
     # Equatorial circle (xy-plane, z=0)
@@ -48,23 +51,27 @@ def draw_bloch_sphere(ax, fontsize=20, show_theta_phi=True):
     ax.view_init(elev=20, azim=45)
     
     # Add angle indicators
-    # Theta (polar angle) - arc from z-axis
+    # Theta (polar angle) - arc from z-axis down towards xy-plane, on sphere surface
     if show_theta_phi:
-        theta_arc = np.linspace(0, np.pi/4, 20)
-        x_theta = 0.3 * np.sin(theta_arc)
-        z_theta = 0.3 * np.cos(theta_arc)
+        # Draw theta arc in the -xz-plane (reflected by π), starting from +z axis, on sphere surface
+        theta_arc = np.linspace(0, np.pi/3, 20)
+        x_theta = -np.sin(theta_arc)  # radius = 1 (sphere surface), reflected by π
+        z_theta = np.cos(theta_arc)
         y_theta = np.zeros_like(theta_arc)
-        ax.plot(x_theta, y_theta, z_theta, 'k-', linewidth=1.5)
-        ax.text(0.2, 0, 0.25, r'$\theta$', fontsize=fontsize*0.8, ha='center', va='center')
+        ax.plot(x_theta, y_theta, z_theta, 'k-', linewidth=2)
+        ax.text(-0.27, 0, 0.85, r'$\theta$', fontsize=fontsize, ha='center', va='center')
         
-        # Phi (azimuthal angle) - arc in xy-plane
-        phi_arc = np.linspace(0, np.pi/3, 15)
-        x_phi = 0.4 * np.cos(phi_arc)
-        y_phi = 0.4 * np.sin(phi_arc)
-        z_phi = np.zeros_like(phi_arc)
-        ax.plot(x_phi, y_phi, z_phi, 'k-', linewidth=1.5)
-        ax.text(0.3, 0.2, 0, r'$\phi$', fontsize=fontsize*0.8, ha='center', va='center')
-    return ax
+        # Phi (azimuthal angle) - arc in xy-plane around z-axis, on upper sphere surface, reflected by π radians
+        phi_arc = np.linspace(np.pi/2, np.pi, 20)  # Reflected by π radians (from +y to -x axis)
+        z_level = 0.7  # Upper part of sphere
+        radius_at_z = np.sqrt(1 - z_level**2)  # Radius of circle at this z-level
+        x_phi = radius_at_z * np.cos(phi_arc)
+        y_phi = radius_at_z * np.sin(phi_arc)
+        z_phi = np.full_like(phi_arc, z_level)
+        ax.plot(x_phi, y_phi, z_phi, 'k-', linewidth=2)
+        ax.text(-0.38, 0.45, 0.7, r'$\varphi$', fontsize=fontsize, ha='center', va='center')
+    return ax, u, v
+
 
 def get_bloch_coords(rho_single_qubit):
     a_x = 2 * rho_single_qubit[1, 0].real
@@ -84,27 +91,42 @@ def evolve_state(evals, evecs, psi0, t_ls, q_idx=None):
     coeffs_matrix = overlaps[:, None] * phases_matrix  # Shape: (n_states, n_times)
 
     if q_idx is not None:
-        psi_t_ls = []
-        for t_idx in range(len(t_ls)):
-            psi_t = sum(evecs[i] * coeffs_matrix[i, t_idx] for i in range(len(evals)))
-            rho_t = qt.ket2dm(psi_t)
-            rho_single = rho_t.ptrace(q_idx)
-            psi_t_ls.append(rho_single)
+        # Check if q_idx is a list/array or a single value
+        if isinstance(q_idx, (list, np.ndarray)):
+            # Return dictionary with results for each q_idx
+            results = {}
+            for q_i in q_idx:
+                psi_t_ls = []
+                for t_idx in range(len(t_ls)):
+                    psi_t = sum(evecs[i] * coeffs_matrix[i, t_idx] for i in range(len(evals)))
+                    rho_t = qt.ket2dm(psi_t)
+                    rho_single = rho_t.ptrace(q_i)
+                    psi_t_ls.append(rho_single)
+                results[q_i] = psi_t_ls
+            return results
+        else:
+            # Single q_idx case
+            psi_t_ls = []
+            for t_idx in range(len(t_ls)):
+                psi_t = sum(evecs[i] * coeffs_matrix[i, t_idx] for i in range(len(evals)))
+                rho_t = qt.ket2dm(psi_t)
+                rho_single = rho_t.ptrace(q_idx)
+                psi_t_ls.append(rho_single)
+            return psi_t_ls
     else:
         # Fully vectorized reconstruction for full quantum states
         psi_t_ls = [sum(evecs[i] * coeffs_matrix[i, t_idx] for i in range(len(evals))) 
                     for t_idx in range(len(t_ls))]
-    
-    return psi_t_ls
+        return psi_t_ls
 
-def fig1_de(t_ls, Delta_local_ls=[-10*5.42, -0.5*5.42], Delta_mean=0.5*5.42, q_idx=3, h_ls=[
+def fig1_de(t_ls, Delta_local_ls=[-10*5.42, -0.5*5.42], Delta_mean=0.5*5.42, h_ls=[
             0.24996654759766535,
             0.09286441773368292,
             0.03781977537875725,
             0.5848043295638031,
             0.1759548522567862,
             0.3655913041729373
-        ], J=5.42, a = 10, Omega = 15.8, phi = 0, fontsize=20, dir_root='fig1'):
+        ], J=5.42, a = 10, Omega = 15.8, phi = 0, fontsize=20, dir_root='fig1', force_recompute=False):
     
     # Set font first so it applies to all text including Bloch sphere lab
     mpl.rcParams.update({
@@ -145,96 +167,149 @@ def fig1_de(t_ls, Delta_local_ls=[-10*5.42, -0.5*5.42], Delta_mean=0.5*5.42, q_i
 
     x= [(i * a, 0) for i in range(len(h_ls))]
 
-    H_plateau_localized = get_H_indep(Omega=Omega, phi=phi, Delta_global=Delta_global_localized, Delta_local=Delta_local_localized, h_ls=h_ls, x=x)
-    H_plateau_chaos = get_H_indep(Omega=Omega, phi=phi, Delta_global=Delta_global_chaos, Delta_local=Delta_local_chaos, h_ls=h_ls, x=x)
+    payload = {
+        "figure": "fig1_de",
+        "t_ls": t_ls.tolist(),
+        "Delta_local_localized": Delta_local_localized,
+        "Delta_local_chaos": Delta_local_chaos,
+        "Delta_mean": Delta_mean,
+        "h_ls": h_ls,
+        "J": J,
+        "a": a,
+        "Omega": Omega,
+        "phi": phi
+    }
+    uid, added = ExptStore(dir_root).add(payload, timestamp=0)
+    os.makedirs(os.path.join(dir_root, "data"), exist_ok=True)
 
-    evals_localized, evecs_localized = H_plateau_localized.eigenstates()
-    evals_chaos, evecs_chaos = H_plateau_chaos.eigenstates()
-    psi_t_ls_localized = evolve_state(evals_localized, evecs_localized, all0, t_ls, q_idx=q_idx)
-    psi_t_ls_chaos = evolve_state(evals_chaos, evecs_chaos, all0, t_ls, q_idx=q_idx)
-    
-    # Extract Bloch coordinates from reduced density matrices
-    bloch_coords_localized = np.array([get_bloch_coords(rho.full()) for rho in psi_t_ls_localized])
-    bloch_coords_chaos = np.array([get_bloch_coords(rho.full()) for rho in psi_t_ls_chaos])
+    data_filename = os.path.join(dir_root, "data", f"fig1_chain_{uid}.npy")
+    if not os.path.exists(data_filename) or force_recompute:
 
-    # Create figure with two 3D subplots side by side
-    fig = plt.figure(figsize=(10, 5))
-    
-    # Localized case (panel d)
-    ax1 = fig.add_subplot(121, projection='3d')
-    draw_bloch_sphere(ax1, fontsize=fontsize, show_theta_phi=False)
-    
-    # Plot time-colored points
-    for i, (x, y, z) in enumerate(bloch_coords_localized):
-        ax1.scatter(x, y, z, c=[point_colors_localized[i]], s=10, alpha=0.7)
-    
-    ax1.set_title(rf'$\Delta_{{\mathrm{{local}}}} = {Delta_local_localized/J:.3g}J$', fontsize=fontsize)
-    ax1.set_xlim([-1.2, 1.2])
-    ax1.set_ylim([-1.2, 1.2])
-    ax1.set_zlim([-1.2, 1.2])
-    ax1.set_box_aspect([1,1,1])
-    
-    # Remove background panes and grid completely
-    ax1.xaxis.pane.fill = False
-    ax1.yaxis.pane.fill = False
-    ax1.zaxis.pane.fill = False
-    ax1.xaxis.pane.set_edgecolor('none')
-    ax1.yaxis.pane.set_edgecolor('none')
-    ax1.zaxis.pane.set_edgecolor('none')
-    ax1.xaxis.pane.set_alpha(0)
-    ax1.yaxis.pane.set_alpha(0)
-    ax1.zaxis.pane.set_alpha(0)
-    ax1.grid(False)
-    ax1.set_xticks([])
-    ax1.set_yticks([])
-    ax1.set_zticks([])
-    ax1.axis('off')
-    
-    # Chaotic case (panel e)
-    ax2 = fig.add_subplot(122, projection='3d')
-    draw_bloch_sphere(ax2, fontsize=fontsize, show_theta_phi=False)
-    
-    # Plot time-colored points
-    for i, (x, y, z) in enumerate(bloch_coords_chaos):
-        ax2.scatter(x, y, z, c=[point_colors_chaos[i]], s=5, alpha=0.7)
-    
-    ax2.set_title(rf'$\Delta_{{\mathrm{{local}}}} = {Delta_local_chaos/J:.3g}J$', fontsize=fontsize)
-    ax2.set_xlim([-1.2, 1.2])
-    ax2.set_ylim([-1.2, 1.2])
-    ax2.set_zlim([-1.2, 1.2])
-    ax2.set_box_aspect([1,1,1])
-    
-    # Remove background panes and grid completely
-    ax2.xaxis.pane.fill = False
-    ax2.yaxis.pane.fill = False
-    ax2.zaxis.pane.fill = False
-    ax2.xaxis.pane.set_edgecolor('none')
-    ax2.yaxis.pane.set_edgecolor('none')
-    ax2.zaxis.pane.set_edgecolor('none')
-    ax2.xaxis.pane.set_alpha(0)
-    ax2.yaxis.pane.set_alpha(0)
-    ax2.zaxis.pane.set_alpha(0)
-    ax2.grid(False)
-    ax2.set_xticks([])
-    ax2.set_yticks([])
-    ax2.set_zticks([])
-    ax2.axis('off')
+        H_plateau_localized = get_H_indep(Omega=Omega, phi=phi, Delta_global=Delta_global_localized, Delta_local=Delta_local_localized, h_ls=h_ls, x=x)
+        H_plateau_chaos = get_H_indep(Omega=Omega, phi=phi, Delta_global=Delta_global_chaos, Delta_local=Delta_local_chaos, h_ls=h_ls, x=x)
 
+        evals_localized, evecs_localized = H_plateau_localized.eigenstates()
+        evals_chaos, evecs_chaos = H_plateau_chaos.eigenstates()
+
+        N = len(h_ls)  # Number of qubits
+
+        # Evolve states for all qubits at once 
+        q_idx_list = list(range(N))
+        psi_t_ls_localized_all = evolve_state(evals_localized, evecs_localized, all0, t_ls, q_idx=q_idx_list)
+        psi_t_ls_chaos_all = evolve_state(evals_chaos, evecs_chaos, all0, t_ls, q_idx=q_idx_list)
+
+        # Convert to numpy arrays for saving
+        data_to_save = {
+            "psi_t_ls_localized_all": np.array([[rho.full() for rho in psi_t_ls_localized_all[q]] for q in range(N)]),
+            "psi_t_ls_chaos_all": np.array([[rho.full() for rho in psi_t_ls_chaos_all[q]] for q in range(N)])
+        }
+        np.save(data_filename, data_to_save, allow_pickle=True)
+    
+    else:
+        print("Loading data from file:", data_filename)
+        data = np.load(data_filename, allow_pickle=True).item()
+        psi_t_ls_localized_all = {}
+        psi_t_ls_chaos_all = {}
+        N = len(h_ls)
+        for q in range(N):
+            psi_t_ls_localized_all[q] = [qt.Qobj(rho) for rho in data["psi_t_ls_localized_all"][q]]
+            psi_t_ls_chaos_all[q] = [qt.Qobj(rho) for rho in data["psi_t_ls_chaos_all"][q]]
 
     
-    # Panel labels
-    axs = [ax1, ax2]
-    labels = [r'$\sf{\textbf{d}}$', r'$\sf{\textbf{e}}$']
-    
-    for ax, lab in zip(axs, labels):
-        ax.text(
-            -0.2, 1.05, 16.5, lab,
-            transform=ax.transAxes,
-            fontsize=fontsize*1.3,
-            weight='bold'
-        )
-    
-    plt.tight_layout()
+    # Create figure with 2 rows x N columns
+    fig = plt.figure(figsize=(3*N, 8))
+
+    # Loop over all qubits
+    for q_idx in trange(N, desc="Plotting qubits..."):
+        # Get reduced density matrices for this qubit
+        psi_t_ls_localized = psi_t_ls_localized_all[q_idx]
+        psi_t_ls_chaos = psi_t_ls_chaos_all[q_idx]
+        
+        # Extract Bloch coordinates from reduced density matrices
+        bloch_coords_localized = np.array([get_bloch_coords(rho.full()) for rho in psi_t_ls_localized])
+        bloch_coords_chaos = np.array([get_bloch_coords(rho.full()) for rho in psi_t_ls_chaos])
+        
+        # Localized case (top row)
+        ax1 = fig.add_subplot(2, N, q_idx + 1, projection='3d')
+        draw_bloch_sphere(ax1, fontsize=fontsize, show_theta_phi=False)
+        
+        # Plot time-colored points
+        for i, (x, y, z) in enumerate(bloch_coords_localized):
+            ax1.scatter(x, y, z, c=[point_colors_localized[i]], s=10, alpha=0.7)
+        
+        if q_idx == 0:
+            ax1.set_title(rf'$\Delta_{{\mathrm{{local}}}} = {Delta_local_localized/J:.3g}J$', fontsize=fontsize, y=1.0)
+
+        ax1.set_xlim([-1.1, 1.1])
+        ax1.set_ylim([-1.1, 1.1])
+        ax1.set_zlim([-1.1, 1.1])
+        ax1.set_box_aspect([1,1,1])
+        
+        # Remove background panes and grid completely
+        ax1.xaxis.pane.fill = False
+        ax1.yaxis.pane.fill = False
+        ax1.zaxis.pane.fill = False
+        ax1.xaxis.pane.set_edgecolor('none')
+        ax1.yaxis.pane.set_edgecolor('none')
+        ax1.zaxis.pane.set_edgecolor('none')
+        ax1.xaxis.pane.set_alpha(0)
+        ax1.yaxis.pane.set_alpha(0)
+        ax1.zaxis.pane.set_alpha(0)
+        ax1.grid(False)
+        ax1.set_xticks([])
+        ax1.set_yticks([])
+        ax1.set_zticks([])
+        ax1.axis('off')
+
+        # Make axes background fully transparent so overlapping axes don't mask neighbors
+        ax1.set_facecolor((1, 1, 1, 0))
+        ax1.patch.set_alpha(0)
+        ax1.set_zorder(10)
+
+        # (optionally) also kill any remaining frame edge
+        ax1.patch.set_edgecolor('none')
+                
+        # Chaotic case (bottom row)
+        ax2 = fig.add_subplot(2, N, N + q_idx + 1, projection='3d')
+        draw_bloch_sphere(ax2, fontsize=fontsize, show_theta_phi=False)
+        
+        # Plot time-colored points
+        for i, (x, y, z) in enumerate(bloch_coords_chaos):
+            ax2.scatter(x, y, z, c=[point_colors_chaos[i]], s=5, alpha=0.7)
+        
+        if q_idx == 0:
+            ax2.set_title(rf'$\Delta_{{\mathrm{{local}}}} = {Delta_local_chaos/J:.3g}J$', fontsize=fontsize, y=1.0)
+       
+        ax2.set_xlim([-1.1, 1.1])
+        ax2.set_ylim([-1.1, 1.1])
+        ax2.set_zlim([-1.1, 1.1])
+        ax2.set_box_aspect([1,1,1])
+        
+        # Remove background panes and grid completely
+        ax2.xaxis.pane.fill = False
+        ax2.yaxis.pane.fill = False
+        ax2.zaxis.pane.fill = False
+        ax2.xaxis.pane.set_edgecolor('none')
+        ax2.yaxis.pane.set_edgecolor('none')
+        ax2.zaxis.pane.set_edgecolor('none')
+        ax2.xaxis.pane.set_alpha(0)
+        ax2.yaxis.pane.set_alpha(0)
+        ax2.zaxis.pane.set_alpha(0)
+        ax2.grid(False)
+        ax2.set_xticks([])
+        ax2.set_yticks([])
+        ax2.set_zticks([])
+        ax2.axis('off')
+
+        # Make axes background fully transparent so overlapping axes don't mask neighbors
+        ax2.set_facecolor((1, 1, 1, 0))
+        ax2.patch.set_alpha(0)
+        ax2.set_zorder(10)
+
+        # (optionally) also kill any remaining frame edge
+        ax2.patch.set_edgecolor('none')
+            
+    plt.subplots_adjust(left=0.001, right=0.999, top=0.99, bottom=0.01, wspace=-0.6, hspace=-0.1)
     os.makedirs(os.path.join(dir_root, "results"), exist_ok=True)
     fig_path = os.path.join(dir_root, "results", f"fig1_de.pdf")
     plt.savefig(fig_path)
@@ -242,6 +317,7 @@ def fig1_de(t_ls, Delta_local_ls=[-10*5.42, -0.5*5.42], Delta_mean=0.5*5.42, q_i
 
 if __name__ == "__main__":
     t_ls = np.logspace(-3, 1, 10000)
+    # t_ls = np.logspace(-3, 1, 10)
     fig1_de(t_ls) 
 
 

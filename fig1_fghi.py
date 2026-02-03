@@ -213,6 +213,18 @@ def vn_entropy_halfcut_all_eigenstates(eigenstates, N, log_base=np.e, eps=1e-15)
         entropies[idx] = S
     return entropies
 
+def evals_only(N, H_int, Delta_local, Delta_mean, t_ls=None, Omega=15.8, phi=0, a=10, threshold=0, NN_only=False):
+    """Lightweight function to compute only eigenvalues (for DOS calculations).
+    Note: t_ls parameter is ignored but included for compatibility with repeat_quantities_general.
+    """
+    h_ls = get_h_ls(N, threshold=threshold)
+    evals, evecs = diagonalize_aquila(
+        Delta_local, Delta_mean, N,
+        Omega=Omega, phi=phi, H_int=H_int, a=a,
+        threshold=threshold, h_ls=h_ls, NN_only=NN_only
+    )
+    return {'evals': evals}
+
 def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8, phi=0, a = 10, threshold=0, NN_only=False):
     h_ls = get_h_ls(N, threshold=threshold)
     evals, evecs = diagonalize_aquila(
@@ -485,7 +497,7 @@ def plot_vn_entropy_vs_energy(
 
     # page value for equal bipartition
     dim_half = 2 ** (N // 2)
-    page_val = page_value_eqbi(dim_half, dim_half)
+    page_val = page_value_eqbi(dim_half)
     ax.axhline(y=page_val, color='black', linestyle=':', linewidth=3, label='$\mathrm{Page}$')
 
     # maximum entropy line
@@ -539,7 +551,7 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     fig, axs = plt.subplots(2, 2, figsize=(24, 24))
 
     # inset on (a): eigenvalue histogram outline
-    axins = inset_axes(axs[0, 0], width="30%", height="30%", loc='upper right')
+    # axins = inset_axes(axs[0, 0], width="30%", height="30%", loc='upper right')
 
     # standardize color normalization
     vn_datasets = []
@@ -579,29 +591,29 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
             )
 
             # density of states in the inset
-            ev = eigevals_all.flatten() / J
-            # if j == 0:
+            # ev = eigevals_all.flatten() / J
+            # # if j == 0:
 
-            ev_min_0 = -25
-            ev_max_0 = 25
+            # ev_min_0 = -25
+            # ev_max_0 = 25
 
-            ev = ev[ev >= ev_min_0]
-            ev = ev[ev <= ev_max_0]
-            # Use shared bin edges and peak-normalize so both distributions are visible on the same scale
-            ev_counts, ev_edges = np.histogram(ev, bins=100, density=True)
-            ev_centers = (ev_edges[:-1] + ev_edges[1:]) / 2
-            if np.max(ev_counts) > 0:
-                ev_counts_plot = ev_counts / np.max(ev_counts)
-            else:
-                ev_counts_plot = ev_counts
-            axins.plot(
-                ev_centers, ev_counts_plot,
-                linestyle=linestyles[j], color=colors[j], alpha=alpha,
-                linewidth=2.5, zorder=2
-            )
+            # ev = ev[ev >= ev_min_0]
+            # ev = ev[ev <= ev_max_0]
+            # # Use shared bin edges and peak-normalize so both distributions are visible on the same scale
+            # ev_counts, ev_edges = np.histogram(ev, bins=100, density=True)
+            # ev_centers = (ev_edges[:-1] + ev_edges[1:]) / 2
+            # if np.max(ev_counts) > 0:
+            #     ev_counts_plot = ev_counts / np.max(ev_counts)
+            # else:
+            #     ev_counts_plot = ev_counts
+            # axins.plot(
+            #     ev_centers, ev_counts_plot,
+            #     linestyle=linestyles[j], color=colors[j], alpha=alpha,
+            #     linewidth=2.5, zorder=2
+            # )
             
             # Add mean ground state energy to inset
-            ground_ev = ground_energies_all / J
+            # ground_ev = ground_energies_all / J
             # if j == 0:
             #     ground_ev = ground_ev[ground_ev >= ev_min_0]
             #     ground_ev = ground_ev[ground_ev <= ev_max_0]
@@ -609,16 +621,16 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
             #     ground_ev = ground_ev[ground_ev >= ev_min_0]
             #     ground_ev = ground_ev[ground_ev <= ev_max_0]
             
-            if len(ground_ev) > 0:
-                mean_ground_energy = np.mean(ground_ev)
-                axins.axvline(
-                    x=mean_ground_energy,
-                    linestyle=linestyles[j], color=colors[j],
-                    alpha=min(1.0, alpha * 0.9), linewidth=5,
-                    zorder=3
-                )
+            # if len(ground_ev) > 0:
+            #     mean_ground_energy = np.mean(ground_ev)
+            #     axins.axvline(
+            #         x=mean_ground_energy,
+            #         linestyle=linestyles[j], color=colors[j],
+            #         alpha=min(1.0, alpha * 0.9), linewidth=5,
+            #         zorder=3
+            #     )
 
-            axins.set_ylim(0, 1.05)
+            # axins.set_ylim(0, 1.05)
 
             # --- panel (b): spectral form factor ---
             axs[0, 1].plot(
@@ -712,8 +724,8 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     axs[1, 1].set_xlabel(r'$t_{\mathrm{evol}} \, (\mu \mathrm{s})$', fontsize=1.3*fontsize)
     axs[1, 1].set_ylabel(r'$S_{1, \, A}(t_{\mathrm{evol}})$', fontsize=1.3*fontsize)
 
-    axins.set_xlabel(r'$E_n / J$', fontsize=fontsize*0.99)
-    axins.set_ylabel(r'$\varrho (E_n / J)$', fontsize=fontsize*0.99)
+    # axins.set_xlabel(r'$E_n / J$', fontsize=fontsize*0.99)
+    # axins.set_ylabel(r'$\varrho (E_n / J)$', fontsize=fontsize*0.99)
     
     axs[0, 1].set_xscale('log')
     axs[0, 1].set_ylim(1e-10, 1.1)
@@ -735,16 +747,16 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
 
 
     # panel labels
-    labels = [r'$\sf{\textbf{f}}$', 
-                  r'$\sf{\textbf{g}}$', 
-                  r'$\sf{\textbf{h}}$', 
-                  r'$\sf{\textbf{i}}$']
+    labels = [r'$\sf{\textbf{a}}$', 
+                  r'$\sf{\textbf{b}}$', 
+                  r'$\sf{\textbf{c}}$', 
+                  r'$\sf{\textbf{d}}$']
     
      # For each axes (including inset)
     for ax_ in axs.flat:
         style_axis(ax_, fontsize=fontsize)
 
-    style_axis(axins, fontsize=fontsize)
+    # style_axis(axins, fontsize=fontsize)
 
     for ax, lab in zip(axs.flat, labels):
         ax.text(
@@ -779,7 +791,7 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     uid, added = manager.add(payload, timestamp=0)
     results_dir = os.path.join(dir_root, "results")
     os.makedirs(results_dir, exist_ok=True)
-    out = os.path.join(results_dir, f"fig1_fghi_{uid}.pdf")
+    out = os.path.join(results_dir, f"fig1_fghi_{uid}.png")
     plt.savefig(out)
     plt.close(fig)
 
@@ -791,6 +803,10 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
         # Shared bin edges across all conditions
         e_edges = np.linspace(np.min(all_E), np.max(all_E), bins_e + 1)
         s_edges = np.linspace(np.min(all_S), np.max(all_S), bins_s + 1)
+        
+        # Compute shared y-axis limits
+        y_min = np.min(all_S)
+        y_max = np.max(all_S)
 
         # Shared color normalization via global max bin count
         max_count = 0.0
@@ -802,27 +818,177 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
         c_vmin = 0.0
         c_vmax = float(np.log10(max_count + 1.0)) if max_count > 0 else 1.0
 
-        for d in vn_datasets:
-            plot_vn_entropy_vs_energy(
-                all_results=None,
-                N=N,
-                J=J,
-                fontsize=fontsize,
-                dir_root=dir_root,
-                Delta_mean=d['Delta_mean'],
-                Delta_local=d['Delta_local'],
-                energies=d['E'],
-                entropies=d['S'],
-                e_edges=e_edges,
-                s_edges=s_edges,
-                c_vmin=c_vmin,
-                c_vmax=c_vmax,
-                bins_e=bins_e,
-                bins_s=bins_s,
-            )
-    
-    # VN entropy vs energy plots are saved per (Delta_mean, Delta_local) during the loop above.
+        # Create combined figure with side-by-side subplots
+        n_datasets = len(vn_datasets)
+        fig = plt.figure(figsize=(10 * n_datasets, 10), constrained_layout=True)
+        gs = fig.add_gridspec(1, n_datasets + 1, width_ratios=[1.0] * n_datasets + [0.06])
+        
+        # Page value for equal bipartition
+        dim_half = 2 ** (N // 2)
+        page_val = page_value_eqbi(dim_half)
+        S_max = np.log(dim_half)
+        
+        labels = [r'$\sf{\textbf{a}}$', r'$\sf{\textbf{b}}$', r'$\sf{\textbf{c}}$', r'$\sf{\textbf{d}}$']
+        
+        for idx, d in enumerate(vn_datasets):
+            ax = fig.add_subplot(gs[0, idx])
+            
+            all_energies = np.asarray(d['E'], dtype=np.float64)
+            all_entropies = np.asarray(d['S'], dtype=np.float64)
+            
+            # Compute 2D histogram with shared bins
+            H, _, _ = np.histogram2d(all_energies, all_entropies, bins=[e_edges, s_edges])
+            
+            # Bin index per point
+            e_idx = np.clip(np.digitize(all_energies, e_edges) - 1, 0, H.shape[0] - 1)
+            s_idx = np.clip(np.digitize(all_entropies, s_edges) - 1, 0, H.shape[1] - 1)
+            counts = H[e_idx, s_idx]
+            
+            c = np.log10(counts + 1.0)
+            norm = mpl.colors.Normalize(vmin=c_vmin, vmax=c_vmax, clip=True)
+            
+            sc = ax.scatter(all_energies, all_entropies, c=c, s=6, cmap='viridis', norm=norm, linewidths=0)
+            
 
+            if idx == n_datasets - 1:
+                ax.axhline(y=page_val, color='black', linestyle=':', linewidth=3, label='$\mathrm{Page}$')
+                # ax.axhline(y=S_max, color='red', linestyle='--', linewidth=3, label='$\log{d_A}$')
+                ax.legend(fontsize=0.9 * fontsize, loc='upper right')
+            else:
+                ax.axhline(y=page_val, color='black', linestyle=':', linewidth=3)
+                # ax.axhline(y=S_max, color='red', linestyle='--', linewidth=3)
+            
+            ax.set_xlabel(r'$E_n / J$', fontsize=1.3 * fontsize)
+            ax.set_ylabel(r'$S_{1,A}(E_n)$', fontsize=1.3 * fontsize)
+            ax.set_ylim(y_min, y_max)
+            ax.set_box_aspect(1)
+            
+            # Add panel label
+            if idx < len(labels):
+                ax.text(
+                    -0.2, 1.05, labels[idx],
+                    transform=ax.transAxes,
+                    fontsize=fontsize*1.3,
+                    weight='bold'
+                )
+            
+            # Add title with Delta_local value
+            ax.set_title(fr'$\Delta_{{\mathrm{{local}}}}={d["Delta_local"]/J:.3g} J$', 
+                        fontsize=1.1 * fontsize, pad=20)
+            
+            style_axis(ax, fontsize=fontsize)
+        
+        # Add shared colorbar
+        cax = fig.add_subplot(gs[0, n_datasets])
+        cbar = fig.colorbar(sc, cax=cax)
+        cbar.set_label(r'$\log_{10}(\mathrm{count}+1)$', fontsize=1.1 * fontsize)
+        
+        # Save combined figure
+        results_dir = os.path.join(dir_root, "results")
+        os.makedirs(results_dir, exist_ok=True)
+        out_name = f"vn_entropy_vs_energy_combined_{uid}.png"
+        out = os.path.join(results_dir, out_name)
+        plt.savefig(out)
+        plt.close(fig)
+        print(f"Saved combined VN entropy vs energy plot to {out}")
+
+
+
+def make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsize=40, alpha=0.8, J=5.42, x_min_max=None, bins_e = 120, bins_s = 120, **kwargs):
+    a = 10
+    J_arr = get_J_arr([(i*a,0) for i in range(N)], N)
+    H_int_ = H_int(J_arr, N)
+
+    mpl.rcParams.update({'font.size': fontsize})
+    plt.rc('text', usetex=True)
+    mpl.rc('text.latex', preamble=r"""
+    \usepackage{amsmath}
+    \usepackage{newtxtext,newtxmath}
+    """)
+
+    # Use same color scheme as make_fig1_fghi for Delta_local
+    colors = ['red', 'black']
+    linestyles = ['-', '--',]
+
+    # Create side-by-side subplots for each Delta_mean
+    n_mean = len(Delta_mean_ls)
+    fig, axs = plt.subplots(1, n_mean, figsize=(10 * n_mean, 10))
+    
+    # Handle case of single subplot
+    if n_mean == 1:
+        axs = [axs]
+    
+    labels = [r'$\sf{\textbf{a}}$', r'$\sf{\textbf{b}}$', r'$\sf{\textbf{c}}$', r'$\sf{\textbf{d}}$']
+
+    for i, Delta_mean in enumerate(Delta_mean_ls):
+        ax = axs[i]
+        
+        for j, Delta_local in enumerate(Delta_local_ls):
+            print(f"Calculating for Delta_mean={Delta_mean}, Delta_local={Delta_local}...")
+
+            all_results = repeat_quantities_general(N, None, H_int_, Delta_local, Delta_mean, n_repeats, func=evals_only, fileprefix='fig1_dos', dir_root=dir_root, **kwargs)
+
+            eigevals_all = np.array([res['evals'] for res in all_results])
+
+            # density of states
+            ev = eigevals_all.flatten() / J
+            ev_counts, ev_edges = np.histogram(ev, bins=100, density=True)
+            ev_centers = (ev_edges[:-1] + ev_edges[1:]) / 2
+            if np.max(ev_counts) > 0:
+                ev_counts_plot = ev_counts / np.max(ev_counts)
+            else:
+                ev_counts_plot = ev_counts
+            ax.plot(
+                ev_centers, ev_counts_plot,
+                linestyle=linestyles[j], color=colors[j], alpha=alpha,
+                linewidth=6,
+                label=fr'$\Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g} J$'
+            )
+            if x_min_max[i] is not None:
+                ax.set_xlim(x_min_max[i])
+
+        ax.set_xlabel(r'$E_n / J$', fontsize=1.3*fontsize)
+        ax.set_ylabel(r'$\varrho (E_n / J)$', fontsize=1.3*fontsize)
+        ax.set_title(fr'$\langle \Delta_{{i}} \rangle={Delta_mean/J:.3g} J$', 
+                    fontsize=1.1 * fontsize, pad=20)
+        ax.legend(fontsize=0.9 * fontsize, loc='upper left')
+        
+        # Add panel label
+        if i < len(labels):
+            ax.text(
+                -0.2, 1.05, labels[i],
+                transform=ax.transAxes,
+                fontsize=fontsize*1.3,
+                weight='bold'
+            )
+        
+        style_axis(ax, fontsize=fontsize)
+
+    plt.tight_layout()
+    manager = ExptStore(dir_root)
+    payload = {
+        "type": "dos_only",
+        "N": N,
+        "Delta_local_ls": Delta_local_ls,
+        "Delta_mean_ls": Delta_mean_ls,
+        "n_repeats": n_repeats,
+    }
+    if 'threshold' in kwargs:
+        threshold = kwargs['threshold']
+        if threshold > 0:
+            payload['threshold'] = threshold
+    if 'Omega' in kwargs:
+        if kwargs['Omega'] != 15.8:
+            payload['Omega'] = kwargs['Omega']
+
+    uid, added = manager.add(payload, timestamp=0)
+    results_dir = os.path.join(dir_root, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    out = os.path.join(results_dir, f"fig1_dos_{uid}.png")
+    plt.savefig(out)
+    plt.close(fig)
+
+  
 def test_ex(h_ls = [.4, 0.1, .272, .987], Delta_local=-0.5*5.42, Delta_mean=0.5*5.42):
     N = len(h_ls)
     J_arr = get_J_arr([(i*10,0) for i in range(N)], N)
@@ -843,9 +1009,15 @@ if __name__ == "__main__":
     t_ls = np.logspace(-2, 3, 500) 
     # Delta_local_ls = [-0.5*J] 
     Delta_local_ls = [-10*J, -0.5*J] 
-    Delta_mean_ls = [0.5*J] 
+    # Delta_mean_ls = [0.5*J] 
+    # Delta_local_ls = [-0.5*J] 
+    Delta_mean_ls = [0.5*J, 15*J] 
     n_repeats = 1000
-    make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False)
+    # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False)
+
+    make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=False, x_min_max=[(-25,25), None])
+    
+    
     # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=True)
     # test_ex(Delta_local=-0.5*5.42)
     # test_ex(Delta_local=-10*5.42)
