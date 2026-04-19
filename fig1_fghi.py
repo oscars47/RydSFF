@@ -225,12 +225,14 @@ def evals_only(N, H_int, Delta_local, Delta_mean, t_ls=None, Omega=15.8, phi=0, 
     )
     return {'evals': evals}
 
-def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8, phi=0, a = 10, threshold=0, NN_only=False):
+def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8, phi=0, a = 10, threshold=0, NN_only=False, middle_h_1=False):
     h_ls = get_h_ls(N, threshold=threshold)
+    if middle_h_1:
+        h_ls[N//2] = 1.0
     evals, evecs = diagonalize_aquila(
         Delta_local, Delta_mean, N,
         Omega=Omega, phi=phi, H_int=H_int, a=a,
-        threshold=threshold, h_ls=h_ls, NN_only=NN_only
+        threshold=threshold, h_ls=h_ls, NN_only=NN_only, 
     )
 
     # Delta_global = Delta_mean - 1/2 * Delta_local
@@ -292,6 +294,9 @@ def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats
     if 'NN_only' in kwargs:
         if kwargs['NN_only']:
             payload['NN_only'] = kwargs['NN_only']
+    if 'middle_h_1' in kwargs:
+        if kwargs['middle_h_1']:
+            payload['middle_h_1'] = kwargs['middle_h_1']
 
     uid, added = manager.add(payload, timestamp=0)
     
@@ -576,8 +581,8 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
             ls_ratios_tilde_all = np.array([res['ls_ratios_tilde'] for res in all_results])
             vn_time_all = np.array([res['vn_time'] for res in all_results])
             vn_time = np.mean(vn_time_all, axis=0)
-            eigevals_all = np.array([res['evals'] for res in all_results])
-            ground_energies_all = np.array([res['ground_energy_expectation'] for res in all_results])
+            # eigevals_all = np.array([res['evals'] for res in all_results])
+            # ground_energies_all = np.array([res['ground_energy_expectation'] for res in all_results])
 
             # --- panel (a): level spacing ratio density with density of states inset ---
             tilde_counts, tilde_edges = np.histogram(ls_ratios_tilde_all, bins=200, density=True)
@@ -777,6 +782,8 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
         "Delta_mean_ls": Delta_mean_ls,
         "n_repeats": n_repeats,
     }
+    extr = 'all_h'
+
     if 'threshold' in kwargs:
         threshold = kwargs['threshold']
         if threshold > 0:
@@ -787,11 +794,15 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     if 'NN_only' in kwargs:
         if kwargs['NN_only']:
             payload['NN_only'] = kwargs['NN_only']
+    if 'middle_h_1' in kwargs:
+        if kwargs['middle_h_1']:
+            payload['middle_h_1'] = kwargs['middle_h_1']
+            extr = 'middle_h_1'
 
     uid, added = manager.add(payload, timestamp=0)
     results_dir = os.path.join(dir_root, "results")
     os.makedirs(results_dir, exist_ok=True)
-    out = os.path.join(results_dir, f"fig1_fghi_{uid}.png")
+    out = os.path.join(results_dir, f"fig1_fghi_{uid}_{extr}.pdf")
     plt.savefig(out)
     plt.close(fig)
 
@@ -1001,26 +1012,140 @@ def test_ex(h_ls = [.4, 0.1, .272, .987], Delta_local=-0.5*5.42, Delta_mean=0.5*
     evals = spec_H[0]
     print(evals)
     print(np.median(evals))
+
+
+
+def make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsize=40, alpha=0.8, J=5.42, **kwargs):
+    a = 10
+    J_arr = get_J_arr([(i*a,0) for i in range(N)], N)
+    H_int_ = H_int(J_arr, N)
+
+    mpl.rcParams.update({'font.size': fontsize})
+    plt.rc('text', usetex=True)
+    mpl.rc('text.latex', preamble=r"""
+    \usepackage{amsmath}
+    \usepackage{newtxtext,newtxmath}
+    """)
+
+    # colors = ['black','red']
+    colors = ['red', 'black']
+    # colors2 = ['gray','lightcoral' ]
+    colors2 = ['lightcoral', 'gray' ]
+    # markers = ['o', 's']
+    markers = ['s', 'o']
+    # linestyles = [ '--','-',]
+    linestyles = ['-', '--',]
+
+    fig, axs = plt.subplots(1, 1, figsize=(10*1.85, 10))
+
+    # inset on (a): eigenvalue histogram outline
+    # axins = inset_axes(axs[0, 0], width="30%", height="30%", loc='upper right')
+
+   
+
+    for i, Delta_mean in enumerate(Delta_mean_ls):
+        for j, Delta_local in enumerate(Delta_local_ls):
+            print(f"Calculating for Delta_mean={Delta_mean}, Delta_local={Delta_local}...")
+
+            all_results = repeat_quantities_general(N, t_ls, H_int_, Delta_local, Delta_mean, n_repeats, func = all_quantites_one_time, fileprefix='fig1',dir_root=dir_root, **kwargs)
+
+            
+            vn_time_all = np.array([res['vn_time'] for res in all_results])
+            vn_time = np.mean(vn_time_all, axis=0)
+            
+    
+                
+            # (d) entropy in time
+            # vn_time_all has shape (n_repeats, n_time_points)
+            # Plot individual realizations (each row is one realization)
+            # for k in range(vn_time_all.shape[0]):  # Plot all individual realizations
+            #     axs[1, 1].plot(
+            #         t_ls, vn_time_all[k],
+            #         linestyle=linestyles[j], alpha=0.03, color=colors2[j], linewidth=2
+            #     )
+            
+            axs.plot(
+                t_ls, vn_time,
+                linestyle=linestyles[j], alpha=alpha, color=colors[j], linewidth=6, label=fr'$\Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g} J$'
+            )
+
+ 
+
+
+    axs.set_xlabel(r'$t \, (\mu \mathrm{s})$', fontsize=1.3*fontsize)
+    axs.set_ylabel(r'$S_{1, \, A}(t)$', fontsize=1.3*fontsize)
+
+    interest_ls = [1e-3, 0.2, 1, 2]
+    for t in interest_ls:
+        axs.axvline(x=t, color='gray', linestyle=':', linewidth=6, alpha=1)
+
+
+    
+
+   
+     # For each axes (including inset)
+   
+    style_axis(axs, fontsize=fontsize)
+
+
+    # axs.set_ylim(-0.1, 2.2)
+    plt.tight_layout()
+    manager = ExptStore(dir_root)
+    payload = {
+        "N": N,
+        "t_ls": t_ls.tolist() if isinstance(t_ls, np.ndarray) else t_ls,
+        "Delta_local_ls": Delta_local_ls,
+        "Delta_mean_ls": Delta_mean_ls,
+        "n_repeats": n_repeats,
+    }
+    extr = 'all_h'
+    if 'threshold' in kwargs:
+        threshold = kwargs['threshold']
+        if threshold > 0:
+            payload['threshold'] = threshold
+    if 'Omega' in kwargs:
+        if kwargs['Omega'] != 15.8:
+            payload['Omega'] = kwargs['Omega']
+    if 'NN_only' in kwargs:
+        if kwargs['NN_only']:
+            payload['NN_only'] = kwargs['NN_only']
+    if 'middle_h_1' in kwargs:
+        if kwargs['middle_h_1']:
+            payload['middle_h_1'] = kwargs['middle_h_1']
+            extr = 'middle_h_1'
+    else:
+        extr = 'all_h'
+
+    uid, added = manager.add(payload, timestamp=0)
+    results_dir = os.path.join(dir_root, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    out = os.path.join(results_dir, f"fig1_donly_{uid}_{extr}.pdf")
+    plt.savefig(out)
+    plt.close(fig)
+
     
 
 if __name__ == "__main__":
-    N = 12
+    N = 6
     J = 5.42
-    t_ls = np.logspace(-2, 3, 500) 
+    t_ls = np.logspace(-2, np.log10(4), 500) 
     # Delta_local_ls = [-0.5*J] 
     Delta_local_ls = [-10*J, -0.5*J] 
     # Delta_mean_ls = [0.5*J] 
     # Delta_local_ls = [-0.5*J] 
-    Delta_mean_ls = [0.5*J, 15*J] 
+    Delta_mean_ls = [0.5*J] 
     n_repeats = 1000
     # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False)
 
-    make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=False, x_min_max=[(-25,25), None])
+    # make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=False, x_min_max=[(-25,25), None])
+
+    make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, 'fig1', fontsize=35, alpha=0.8, J=5.42)
     
     
     # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=True)
-    # test_ex(Delta_local=-0.5*5.42)
-    # test_ex(Delta_local=-10*5.42)
+    # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1_test', fontsize=20, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False, middle_h_1=True)
+    # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1_test', fontsize=20, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False, middle_h_1=False)
+
     
     
 

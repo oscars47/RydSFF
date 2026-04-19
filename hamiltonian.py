@@ -42,7 +42,7 @@ def H_int(J_arr, n_qubits):
     return H
 
 
-def drive_main(neg_phi=True, ret_H_d=False):
+def drive_main(neg_phi=True, ret_H_d=False, ret_H_pieces=False):
     if neg_phi:
         xy_rabi = lambda phi: qt.Qobj([[0, np.exp(-1j*phi)], [np.exp(1j*phi), 0]]) ## NOTE NEW DEFINITION SWITCHING PHI -> -PHI RELATIVE TO THE MANUAL
     else: ## original definition
@@ -131,6 +131,10 @@ def drive_main(neg_phi=True, ret_H_d=False):
             return get_H_indep(Omega_t, phi0, Delta_global_t, Delta_local_t, h_ls, J_arr=J_arr) ## imediately switch to phi1
 
         return H_ramp
+    
+    if ret_H_pieces:
+        return H_pieces
+    
     if not ret_H_d:
         return get_H_indep, get_H_ramp
     else:
