@@ -1,6 +1,10 @@
-## script to make the 4 panel fig in fig 1 of rydsff paper: (f) varrho(tilde r) with inset density of states, (g) SFF, (h) area vs volume law  
+"""
+4 main signatures of chaos for the supplemental: level spacing ratios, SFF, area vs volume law of eigenstates in middle of spectrum, and disorder dependent time growth of entanglement
+"""
+
+
 import numpy as np
-from hamiltonian import drive_main, get_h_ls, get_J_arr, H_int
+from QuEraToolbox.hamiltonian import drive_main, get_h_ls, get_J_arr, H_int
 import qutip as qt
 from tqdm import trange
 import matplotlib.pyplot as plt
@@ -8,7 +12,7 @@ from matplotlib.lines import Line2D
 import matplotlib as mpl
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import os, json, glob
-from expt_file_manager import ExptStore
+from QuEraToolbox.expt_file_manager import ExptStore
 from fig_styling import style_axis
 
 get_H_indep, get_H_ramp, H_d = drive_main(neg_phi=True, ret_H_d=True)
@@ -82,7 +86,7 @@ def vn_halfcut_in_time(eigenvals, eigenstates, N, t_ls, log_base=np.e, eps=1e-15
     dB = 2**(N - n_A)
 
     # Build V = [|E_0>, |E_1>, ...] with Fortran layout (good for BLAS and F-order reshapes)
-    # Important: use order='F' to match QuTiP tensor left-to-right subsystem ordering.
+    # use order='F' to match QuTiP tensor left-to-right subsystem ordering.
     V = np.column_stack([ket.full().ravel(order='F') for ket in eigenstates]).astype(np.complex64, copy=False)
     V = np.asfortranarray(V)    # (d, d), F-contiguous
 
@@ -122,6 +126,56 @@ def vn_halfcut_in_time(eigenvals, eigenstates, N, t_ls, log_base=np.e, eps=1e-15
 
     return entropies
 
+def renyi2_halfcut_in_time(eigenvals, eigenstates, N, t_ls, log_base=np.e, eps=1e-15):
+    """
+    compute S_2(rho_A) = -log(Tr(rho_A^2)) for cut A|B for a pure state psi
+    """
+    n_A = N // 2
+    dA = 2**n_A
+    dB = 2**(N - n_A)
+
+    # Build V = [|E_0>, |E_1>, ...] with Fortran layout (good for BLAS and F-order reshapes)
+    # Important: use order='F' to match QuTiP tensor left-to-right subsystem ordering.
+    V = np.column_stack([ket.full().ravel(order='F') for ket in eigenstates]).astype(np.complex64, copy=False)
+    V = np.asfortranarray(V)    # (d, d), F-contiguous
+
+    # |psi0> = |00...0>
+    psi0_vec = np.zeros(V.shape[0], dtype=np.complex64)
+    psi0_vec[0] = 1.0
+
+    # coefficients c_j = <E_j|psi0>
+    c = V.conj().T @ psi0_vec     # (d,)
+
+    E = np.asarray(eigenvals, dtype=np.float32)  # (d,)
+
+    entropies = np.empty(len(t_ls), dtype=np.float32)
+
+    for idx, t in enumerate(np.asarray(t_ls, dtype=np.float32)):
+        # phase-weighted coefficients
+        phases = np.exp(-1j * E * t, dtype=np.complex64)   # (d,)
+        a = c * phases                                     # (d,)
+
+        # |psi(t)⟩ = V @ a
+        psi_t = V @ a                                      # (d,)
+
+        # Reshape to (dA, dB) matching the chosen bipartition (A = first half)
+        Psi_mat = psi_t.reshape((dA, dB), order='F')
+
+        # Schmidt coeffs via SVD; s are singular values; probabilities p = s^2
+        s = np.linalg.svd(Psi_mat, compute_uv=False)
+        p = (s * s).real
+        # purity Tr(rho_A^2) = sum_i p_i^2
+        purity = np.dot(p, p)
+        # stable Renyi-2 entropy
+        S = -np.log(max(purity, eps))
+        if log_base == 2:
+            S = S / np.log(2.0)
+        elif log_base != np.e:
+            S = S / np.log(log_base)
+        entropies[idx] = S
+
+    return entropies
+
 def vn_entropy_eigenstate_subsys(eigenstate, N, n_A_list=None, log_base=np.e, eps=1e-15):
     """
     compute von Neumann entropy for multiple subsystem cuts of an eigenstate
@@ -139,7 +193,6 @@ def vn_entropy_eigenstate_subsys(eigenstate, N, n_A_list=None, log_base=np.e, ep
     if n_A_list is None:
         n_A_list = list(range(1, N))
     
-    # Convert eigenstate to numpy array with proper ordering
     psi_vec = eigenstate.full().ravel(order='F')
     
     entropies = {}
@@ -169,14 +222,6 @@ def vn_entropy_eigenstate_subsys(eigenstate, N, n_A_list=None, log_base=np.e, ep
 
 def page_value_eqbi(n):
     """Page value (natural log) for equal bipartition https://arxiv.org/pdf/gr-qc/9305007
-
-    The user-provided expression is
-        S_{n,n} = sum_{k=n+1}^{n^2} 1/k - (m-1)/(2n)
-
-    For equal bipartition, interpret `n` as the Hilbert space dimension of one half,
-    i.e. n = dim(A) = dim(B) = 2**(N/2). In that case m = n.
-
-    This helper keeps the old signature but expects `n` to be a *dimension*.
     """
     n_dim = int(n)
     if n_dim <= 1:
@@ -214,9 +259,6 @@ def vn_entropy_halfcut_all_eigenstates(eigenstates, N, log_base=np.e, eps=1e-15)
     return entropies
 
 def evals_only(N, H_int, Delta_local, Delta_mean, t_ls=None, Omega=15.8, phi=0, a=10, threshold=0, NN_only=False):
-    """Lightweight function to compute only eigenvalues (for DOS calculations).
-    Note: t_ls parameter is ignored but included for compatibility with repeat_quantities_general.
-    """
     h_ls = get_h_ls(N, threshold=threshold)
     evals, evecs = diagonalize_aquila(
         Delta_local, Delta_mean, N,
@@ -225,7 +267,7 @@ def evals_only(N, H_int, Delta_local, Delta_mean, t_ls=None, Omega=15.8, phi=0, 
     )
     return {'evals': evals}
 
-def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8, phi=0, a = 10, threshold=0, NN_only=False, middle_h_1=False):
+def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8, phi=0, a = 10, threshold=0, NN_only=False, middle_h_1=False, add_renyi2=False):
     h_ls = get_h_ls(N, threshold=threshold)
     if middle_h_1:
         h_ls[N//2] = 1.0
@@ -235,25 +277,11 @@ def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8,
         threshold=threshold, h_ls=h_ls, NN_only=NN_only, 
     )
 
-    # Delta_global = Delta_mean - 1/2 * Delta_local
-    # if H_int is None:
-    #     x = [(i*a, 0) for i in range(N)] 
-    #     H_plateau = get_H_indep(Omega, phi, Delta_global, Delta_local, h_ls, x=x)
-    # else:
-    #     H_d_ = H_d(Omega, phi, Delta_global, Delta_local, h_ls)
-    #     H_plateau = H_d_ + H_int
-    
-    # # Compute <000|H|000> - ground state |000...0>
-    # ground_state = qt.tensor([qt.basis(2, 0) for _ in range(N)])
-    # ground_energy_expectation = qt.expect(H_plateau, ground_state)
-
     sff_vals = SFF(evals, t_ls)
     ls_ratios_tilde = level_spacing_ratios_tilde(evals)
 
-    # VN entropy for all eigenstates at equal bipartition (half cut)
     vn_halfcut_eigs = vn_entropy_halfcut_all_eigenstates(evecs, N, log_base=np.e)
 
-    # Full S(N_A) profiles for the 10 eigenstates closest in energy to <000|H|000>
     evals_np = np.asarray(evals, dtype=np.float64)
     closest_indices = np.argsort(np.abs(evals_np - 0.0))[:10]
     vn_subsys_closest = []
@@ -264,7 +292,7 @@ def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8,
 
     vn_time = vn_halfcut_in_time(evals, evecs, N, t_ls)
     
-    return {
+    results_dict = {
         'evals': evals,
         'sff_vals': sff_vals,
         'ls_ratios_tilde': ls_ratios_tilde,
@@ -273,6 +301,12 @@ def all_quantites_one_time(N, t_ls, H_int, Delta_local, Delta_mean,  Omega=15.8,
         'vn_subsys_closest': vn_subsys_closest,
         'vn_time': vn_time,
     }
+
+    if add_renyi2:
+        renyi2_time = renyi2_halfcut_in_time(evals, evecs, N, t_ls)
+        results_dict['renyi2_time'] = renyi2_time
+
+    return results_dict
 
 def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats, dir_root, fileprefix, func, **kwargs):
     
@@ -297,6 +331,9 @@ def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats
     if 'middle_h_1' in kwargs:
         if kwargs['middle_h_1']:
             payload['middle_h_1'] = kwargs['middle_h_1']
+    if 'add_renyi2' in kwargs:
+        if kwargs['add_renyi2']:
+            payload['add_renyi2'] = kwargs['add_renyi2']
 
     uid, added = manager.add(payload, timestamp=0)
     
@@ -305,10 +342,9 @@ def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats
     
     filename = os.path.join(quantities_dir, f"{fileprefix}_{n_repeats}_{uid}.json")
     
-    # Search for any existing files with the same UID (potentially different repeat counts)
     existing_data = None
     
-    # Look for files matching pattern: fig1_*_{uid}.json
+    # look for files matching pattern: fig1_*_{uid}.json
     pattern = os.path.join(quantities_dir, f"{fileprefix}_*_{uid}.json")
     matching_files = glob.glob(pattern)
     
@@ -346,14 +382,13 @@ def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats
         all_results = []
         remaining_repeats = n_repeats
     
-    # Compute remaining repeats
     for i in trange(remaining_repeats, desc="Sampling hamiltonians..."):
         if t_ls is not None:
             result = func(N, t_ls, H_int, Delta_local, Delta_mean, **kwargs)
         else:
             result = func(N, H_int, Delta_local, Delta_mean, **kwargs)
         
-        # Helper function to convert numpy types to JSON serializable types
+        # convert numpy types to JSON serializable types
         def numpy_to_python(obj):
             if isinstance(obj, np.ndarray):
                 return obj.tolist()
@@ -370,13 +405,12 @@ def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats
             else:
                 return obj
         
-        # Convert result to JSON serializable format
+        # convert result to JSON serializable format
         json_result = numpy_to_python(result)
         all_results.append(json_result)
         
         # save incrementally every 5 iterations to avoid data loss
         if (i + 1) % 5 == 0 or i == remaining_repeats - 1:
-            # Create filename with current total repeats
             current_total = len(all_results)
             current_filename = os.path.join(quantities_dir, f"{fileprefix}_{current_total}_{uid}.json")
             
@@ -387,15 +421,12 @@ def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats
                 'results': all_results
             }
             
-            # Save with current total repeats in filename
             with open(current_filename, 'w') as f:
                 json.dump(data_to_save, f, indent=2)
             
-            # Delete old file if it exists and is different from current
             if current_filename != filename and os.path.exists(filename):
                 os.remove(filename)
             
-            # Update filename reference for next iteration
             filename = current_filename
     
     # final save
@@ -412,7 +443,6 @@ def repeat_quantities_general(N, t_ls, H_int, Delta_local, Delta_mean, n_repeats
     return all_results
 
 def _extract_vn_spectrum_points(all_results, J):
-    """Flatten energies and half-cut entropies across all realizations."""
     all_energies = []
     all_entropies = []
 
@@ -459,13 +489,12 @@ def plot_vn_entropy_vs_energy(
     \usepackage{amsmath}
     \usepackage{newtxtext,newtxmath}
     """)
-    
+
     fig = plt.figure(figsize=(10, 10), constrained_layout=True)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 0.06]) # extra space for colorbar
+    gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 0.06])
     ax = fig.add_subplot(gs[0, 0])
     cax = fig.add_subplot(gs[0, 1])
-    
-    # collect all eigenstate data
+
     if energies is None or entropies is None:
         if all_results is None:
             raise ValueError("Provide either all_results or (energies, entropies).")
@@ -478,18 +507,15 @@ def plot_vn_entropy_vs_energy(
         print("No VN spectrum points found; skipping VN entropy vs energy plot.")
         plt.close(fig)
         return
-    
-    # color by local 2D density: Bin counts on (E, S) and map each point to its bin count.
+
     if e_edges is None or s_edges is None:
         H, e_edges, s_edges = np.histogram2d(all_energies, all_entropies, bins=[bins_e, bins_s])
     else:
         H, _, _ = np.histogram2d(all_energies, all_entropies, bins=[e_edges, s_edges])
 
-    # Bin index per point
     e_idx = np.clip(np.digitize(all_energies, e_edges) - 1, 0, H.shape[0] - 1)
     s_idx = np.clip(np.digitize(all_entropies, s_edges) - 1, 0, H.shape[1] - 1)
     counts = H[e_idx, s_idx]
-
     c = np.log10(counts + 1.0)
 
     norm = None
@@ -500,21 +526,17 @@ def plot_vn_entropy_vs_energy(
     cbar = fig.colorbar(sc, cax=cax)
     cbar.set_label(r'$\log_{10}(\mathrm{count}+1)$')
 
-    # page value for equal bipartition
     dim_half = 2 ** (N // 2)
     page_val = page_value_eqbi(dim_half)
     ax.axhline(y=page_val, color='black', linestyle=':', linewidth=3, label='$\mathrm{Page}$')
 
-    # maximum entropy line
     S_max = np.log(dim_half)
     ax.axhline(y=S_max, color='red', linestyle='--', linewidth=3, label='$\log{d_A}$')
 
     ax.set_xlabel(r'$E_n / J$', fontsize=1.3 * fontsize)
     ax.set_ylabel(r'$S_{1,A}(E_n)$', fontsize=1.3 * fontsize)
     ax.legend(fontsize=0.9 * fontsize, loc='upper right')
-
     ax.set_box_aspect(1)
-
     style_axis(ax, fontsize=fontsize)
 
     results_dir = os.path.join(dir_root, "results")
@@ -532,7 +554,7 @@ def plot_vn_entropy_vs_energy(
     print(f"Saved VN entropy vs energy plot to {out}")
 
 
-def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsize=40, alpha=0.8, J=5.42, bins_e = 120, bins_s = 120, **kwargs):
+def fig_signatures(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsize=40, alpha=0.8, J=5.42, bins_e = 120, bins_s = 120, **kwargs):
     a = 10
     J_arr = get_J_arr([(i*a,0) for i in range(N)], N)
     H_int_ = H_int(J_arr, N)
@@ -544,19 +566,13 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     \usepackage{newtxtext,newtxmath}
     """)
 
-    # colors = ['black','red']
     colors = ['red', 'black']
-    # colors2 = ['gray','lightcoral' ]
     colors2 = ['lightcoral', 'gray' ]
-    # markers = ['o', 's']
     markers = ['s', 'o']
-    # linestyles = [ '--','-',]
     linestyles = ['-', '--',]
 
     fig, axs = plt.subplots(2, 2, figsize=(24, 24))
 
-    # inset on (a): eigenvalue histogram outline
-    # axins = inset_axes(axs[0, 0], width="30%", height="30%", loc='upper right')
 
     # standardize color normalization
     vn_datasets = []
@@ -581,8 +597,6 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
             ls_ratios_tilde_all = np.array([res['ls_ratios_tilde'] for res in all_results])
             vn_time_all = np.array([res['vn_time'] for res in all_results])
             vn_time = np.mean(vn_time_all, axis=0)
-            # eigevals_all = np.array([res['evals'] for res in all_results])
-            # ground_energies_all = np.array([res['ground_energy_expectation'] for res in all_results])
 
             # --- panel (a): level spacing ratio density with density of states inset ---
             tilde_counts, tilde_edges = np.histogram(ls_ratios_tilde_all, bins=200, density=True)
@@ -595,58 +609,12 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
                 label =fr'$\Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g} J$'
             )
 
-            # density of states in the inset
-            # ev = eigevals_all.flatten() / J
-            # # if j == 0:
-
-            # ev_min_0 = -25
-            # ev_max_0 = 25
-
-            # ev = ev[ev >= ev_min_0]
-            # ev = ev[ev <= ev_max_0]
-            # # Use shared bin edges and peak-normalize so both distributions are visible on the same scale
-            # ev_counts, ev_edges = np.histogram(ev, bins=100, density=True)
-            # ev_centers = (ev_edges[:-1] + ev_edges[1:]) / 2
-            # if np.max(ev_counts) > 0:
-            #     ev_counts_plot = ev_counts / np.max(ev_counts)
-            # else:
-            #     ev_counts_plot = ev_counts
-            # axins.plot(
-            #     ev_centers, ev_counts_plot,
-            #     linestyle=linestyles[j], color=colors[j], alpha=alpha,
-            #     linewidth=2.5, zorder=2
-            # )
-            
-            # Add mean ground state energy to inset
-            # ground_ev = ground_energies_all / J
-            # if j == 0:
-            #     ground_ev = ground_ev[ground_ev >= ev_min_0]
-            #     ground_ev = ground_ev[ground_ev <= ev_max_0]
-            # else:
-            #     ground_ev = ground_ev[ground_ev >= ev_min_0]
-            #     ground_ev = ground_ev[ground_ev <= ev_max_0]
-            
-            # if len(ground_ev) > 0:
-            #     mean_ground_energy = np.mean(ground_ev)
-            #     axins.axvline(
-            #         x=mean_ground_energy,
-            #         linestyle=linestyles[j], color=colors[j],
-            #         alpha=min(1.0, alpha * 0.9), linewidth=5,
-            #         zorder=3
-            #     )
-
-            # axins.set_ylim(0, 1.05)
-
             # --- panel (b): spectral form factor ---
             axs[0, 1].plot(
                 t_ls, sff_vals, 
                 linestyle=linestyles[j], alpha=alpha, color=colors[j], linewidth=6
             )
 
-            # VN entropy vs energy plots are generated after the loop (to standardize colors).
-
-            # (c) entropy by subsystem size: 10 eigenstates closest to <000|H|000>
-            # Each realization stores vn_subsys_closest as a list of length<=10, ordered by closeness.
             max_ranks = 0
             for res in all_results:
                 if 'vn_subsys_closest' in res and isinstance(res['vn_subsys_closest'], list):
@@ -681,42 +649,16 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
                     )
                 
             # (d) entropy in time
-            # vn_time_all has shape (n_repeats, n_time_points)
-            # Plot individual realizations (each row is one realization)
-            for k in range(vn_time_all.shape[0]):  # Plot all individual realizations
+            for k in range(vn_time_all.shape[0]):  
                 axs[1, 1].plot(
                     t_ls, vn_time_all[k],
                     linestyle=linestyles[j], alpha=0.03, color=colors2[j], linewidth=2
                 )
-            # Plot the mean across all realizations
+           
             axs[1, 1].plot(
                 t_ls, vn_time,
                 linestyle=linestyles[j], alpha=alpha, color=colors[j], linewidth=6, label=fr'$\Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g} J$'
             )
-
-            # add horizontal line for the mean entropy of the 10 eigenstates closest to |000...0> energy as in panel (c)
-            # mean_closest_entropy = []
-            # for res in all_results:
-            #     if 'vn_subsys_closest' not in res:
-            #         continue
-            #     if len(res['vn_subsys_closest']) == 0:
-            #         continue
-            #     vn_dict = res['vn_subsys_closest'][0]  # closest eigenstate
-            #     if (N // 2) in vn_dict:
-            #         mean_closest_entropy.append(vn_dict[N // 2])
-            #     elif str(N // 2) in vn_dict:
-            #         mean_closest_entropy.append(vn_dict[str(N // 2)])
-            # if len(mean_closest_entropy) > 0:
-            #     mean_entropy_value = np.mean(mean_closest_entropy)
-            #     print(f"Mean VN entropy at half-cut for closest eigenstate (Delta_local={Delta_local}, Delta_mean={Delta_mean}): {mean_entropy_value}")
-            #     axs[1, 1].axhline(
-            #         y=mean_entropy_value,
-            #         color=colors[j],
-            #         linestyle=linestyles[j],
-            #         alpha=alpha * 0.7,
-            #         linewidth=3
-            #     )
- 
 
            
     axs[0, 0].set_xlabel(r'$\tilde r_n$', fontsize=1.3*fontsize)
@@ -729,9 +671,6 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     axs[1, 1].set_xlabel(r'$t_{\mathrm{evol}} \, (\mu \mathrm{s})$', fontsize=1.3*fontsize)
     axs[1, 1].set_ylabel(r'$S_{1, \, A}(t_{\mathrm{evol}})$', fontsize=1.3*fontsize)
 
-    # axins.set_xlabel(r'$E_n / J$', fontsize=fontsize*0.99)
-    # axins.set_ylabel(r'$\varrho (E_n / J)$', fontsize=fontsize*0.99)
-    
     axs[0, 1].set_xscale('log')
     axs[0, 1].set_ylim(1e-10, 1.1)
     axs[0, 1].set_yscale('log')
@@ -761,11 +700,9 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     for ax_ in axs.flat:
         style_axis(ax_, fontsize=fontsize)
 
-    # style_axis(axins, fontsize=fontsize)
 
     for ax, lab in zip(axs.flat, labels):
         ax.text(
-            # -0.15, 1.05, lab,
             -0.2, 1.05, lab,
             transform=ax.transAxes,
             fontsize=fontsize*1.3,
@@ -806,20 +743,17 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
     plt.savefig(out)
     plt.close(fig)
 
-    # Generate VN entropy vs energy plots with standardized intensity scale across conditions
+    # VN entropy vs energy plots, standardized intensity scale across conditions
     if len(vn_datasets):
         all_E = np.concatenate([d['E'] for d in vn_datasets])
         all_S = np.concatenate([d['S'] for d in vn_datasets])
 
-        # Shared bin edges across all conditions
         e_edges = np.linspace(np.min(all_E), np.max(all_E), bins_e + 1)
         s_edges = np.linspace(np.min(all_S), np.max(all_S), bins_s + 1)
         
-        # Compute shared y-axis limits
         y_min = np.min(all_S)
         y_max = np.max(all_S)
 
-        # Shared color normalization via global max bin count
         max_count = 0.0
         for d in vn_datasets:
             H, _, _ = np.histogram2d(d['E'], d['S'], bins=[e_edges, s_edges])
@@ -829,12 +763,10 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
         c_vmin = 0.0
         c_vmax = float(np.log10(max_count + 1.0)) if max_count > 0 else 1.0
 
-        # Create combined figure with side-by-side subplots
         n_datasets = len(vn_datasets)
         fig = plt.figure(figsize=(10 * n_datasets, 10), constrained_layout=True)
         gs = fig.add_gridspec(1, n_datasets + 1, width_ratios=[1.0] * n_datasets + [0.06])
         
-        # Page value for equal bipartition
         dim_half = 2 ** (N // 2)
         page_val = page_value_eqbi(dim_half)
         S_max = np.log(dim_half)
@@ -847,10 +779,8 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
             all_energies = np.asarray(d['E'], dtype=np.float64)
             all_entropies = np.asarray(d['S'], dtype=np.float64)
             
-            # Compute 2D histogram with shared bins
             H, _, _ = np.histogram2d(all_energies, all_entropies, bins=[e_edges, s_edges])
             
-            # Bin index per point
             e_idx = np.clip(np.digitize(all_energies, e_edges) - 1, 0, H.shape[0] - 1)
             s_idx = np.clip(np.digitize(all_entropies, s_edges) - 1, 0, H.shape[1] - 1)
             counts = H[e_idx, s_idx]
@@ -863,18 +793,15 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
 
             if idx == n_datasets - 1:
                 ax.axhline(y=page_val, color='black', linestyle=':', linewidth=3, label='$\mathrm{Page}$')
-                # ax.axhline(y=S_max, color='red', linestyle='--', linewidth=3, label='$\log{d_A}$')
                 ax.legend(fontsize=0.9 * fontsize, loc='upper right')
             else:
                 ax.axhline(y=page_val, color='black', linestyle=':', linewidth=3)
-                # ax.axhline(y=S_max, color='red', linestyle='--', linewidth=3)
             
             ax.set_xlabel(r'$E_n / J$', fontsize=1.3 * fontsize)
             ax.set_ylabel(r'$S_{1,A}(E_n)$', fontsize=1.3 * fontsize)
             ax.set_ylim(y_min, y_max)
             ax.set_box_aspect(1)
             
-            # Add panel label
             if idx < len(labels):
                 ax.text(
                     -0.2, 1.05, labels[idx],
@@ -883,18 +810,15 @@ def make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, 
                     weight='bold'
                 )
             
-            # Add title with Delta_local value
             ax.set_title(fr'$\Delta_{{\mathrm{{local}}}}={d["Delta_local"]/J:.3g} J$', 
                         fontsize=1.1 * fontsize, pad=20)
             
             style_axis(ax, fontsize=fontsize)
         
-        # Add shared colorbar
         cax = fig.add_subplot(gs[0, n_datasets])
         cbar = fig.colorbar(sc, cax=cax)
         cbar.set_label(r'$\log_{10}(\mathrm{count}+1)$', fontsize=1.1 * fontsize)
         
-        # Save combined figure
         results_dir = os.path.join(dir_root, "results")
         os.makedirs(results_dir, exist_ok=True)
         out_name = f"vn_entropy_vs_energy_combined_{uid}.png"
@@ -917,15 +841,12 @@ def make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsiz
     \usepackage{newtxtext,newtxmath}
     """)
 
-    # Use same color scheme as make_fig1_fghi for Delta_local
     colors = ['red', 'black']
     linestyles = ['-', '--',]
 
-    # Create side-by-side subplots for each Delta_mean
     n_mean = len(Delta_mean_ls)
     fig, axs = plt.subplots(1, n_mean, figsize=(10 * n_mean, 10))
     
-    # Handle case of single subplot
     if n_mean == 1:
         axs = [axs]
     
@@ -964,7 +885,6 @@ def make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsiz
                     fontsize=1.1 * fontsize, pad=20)
         ax.legend(fontsize=0.9 * fontsize, loc='upper left')
         
-        # Add panel label
         if i < len(labels):
             ax.text(
                 -0.2, 1.05, labels[i],
@@ -999,26 +919,58 @@ def make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsiz
     plt.savefig(out)
     plt.close(fig)
 
-  
-def test_ex(h_ls = [.4, 0.1, .272, .987], Delta_local=-0.5*5.42, Delta_mean=0.5*5.42):
-    N = len(h_ls)
-    J_arr = get_J_arr([(i*10,0) for i in range(N)], N)
-    H = get_H_indep(15.8, 0, Delta_mean, Delta_local, h_ls, x=[(i*10,0) for i in range(N)])
-    bra000 = qt.tensor([qt.basis(2,0) for _ in range(N)]).dag()
-    ket000 = qt.tensor([qt.basis(2,0) for _ in range(N)])
-    ex000 = (bra000 * H * ket000).real
-    print(f"<000|H|000> = {ex000}")
-    spec_H = H.eigenstates()
-    evals = spec_H[0]
-    print(evals)
-    print(np.median(evals))
 
+def magnetisation_fig(
+    base_drive,
+    Delta_i_avg_ls_mag,
+    Delta_i_avg_ls_one_P,
+    Delta_i_std_ls,
+    n_q_ls,
+    dir_main,
+    alpha=0.8,
+    fontsize=40,
+    force_recompute=False,
+    J_value=5.42,
+    n_repeats=1,
+):
 
+    def _to_list(x):
+        return x.tolist() if isinstance(x, np.ndarray) else list(x)
 
-def make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root, fontsize=40, alpha=0.8, J=5.42, **kwargs):
-    a = 10
-    J_arr = get_J_arr([(i*a,0) for i in range(N)], N)
-    H_int_ = H_int(J_arr, N)
+    def _mag_onep_one_time(N, H_int, Delta_local, Delta_mean, Omega=15.8, phi=0, threshold=0, NN_only=False):
+        h_ls = get_h_ls(N, threshold=threshold)
+        evals, evecs = diagonalize_aquila(
+            Delta_local,
+            Delta_mean,
+            N,
+            Omega=Omega,
+            phi=phi,
+            H_int=H_int,
+            threshold=threshold,
+            h_ls=h_ls,
+            NN_only=NN_only,
+        )
+
+        mbgs = evecs[0]
+        mbgs_probs = np.abs(mbgs.full().ravel(order='F'))**2
+        hamming_weights = np.array([bin(j).count('1') for j in range(2**N)])
+        one_p = np.array([
+            np.sum(mbgs_probs[hamming_weights == weight])
+            for weight in range(N + 1)
+        ], dtype=np.float64)
+        mag_mbgs = np.sum((N - 2 * np.arange(N + 1)) * one_p)
+
+        return {
+            'magnetization_mbgs': float(np.real(mag_mbgs)),
+            'one_P': one_p,
+            'evals': np.asarray(evals, dtype=np.float64),
+        }
+
+    ev_params = base_drive.get('ev_params', {}) if isinstance(base_drive, dict) else {}
+    Omega = ev_params.get('Omega', 15.8)
+    phi = ev_params.get('phi', 0)
+    threshold = ev_params.get('threshold', 0)
+    NN_only = bool(ev_params.get('NN_only', False))
 
     mpl.rcParams.update({'font.size': fontsize})
     plt.rc('text', usetex=True)
@@ -1027,103 +979,162 @@ def make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, di
     \usepackage{newtxtext,newtxmath}
     """)
 
-    # colors = ['black','red']
-    colors = ['red', 'black']
-    # colors2 = ['gray','lightcoral' ]
-    colors2 = ['lightcoral', 'gray' ]
-    # markers = ['o', 's']
-    markers = ['s', 'o']
-    # linestyles = [ '--','-',]
-    linestyles = ['-', '--',]
+    fig, axs = plt.subplots(1, 2, figsize=(24, 12))
+    colors = ['black', 'red']
+    colors2 = [['black', 'red'], ['gray', 'lightcoral']]
+    linestyles = ['--', '-']
 
-    fig, axs = plt.subplots(1, 1, figsize=(10*1.85, 10))
+    cached_eval_sets = None
 
-    # inset on (a): eigenvalue histogram outline
-    # axins = inset_axes(axs[0, 0], width="30%", height="30%", loc='upper right')
+    for n_q in n_q_ls:
+        a = 10
+        J_arr = get_J_arr([(i * a, 0) for i in range(n_q)], n_q)
+        H_int_ = H_int(J_arr, n_q)
 
-   
+        for j, Delta_local in enumerate(Delta_i_std_ls):
+            mag_vals = []
+            for Delta_mean in Delta_i_avg_ls_mag:
+                all_results = repeat_quantities_general(
+                    n_q,
+                    None,
+                    H_int_,
+                    Delta_local,
+                    Delta_mean,
+                    n_repeats,
+                    dir_root=dir_main,
+                    fileprefix='fig2_mag',
+                    func=_mag_onep_one_time,
+                    Omega=Omega,
+                    phi=phi,
+                    threshold=threshold,
+                    NN_only=NN_only,
+                )
+                mag_vals.append(np.mean([res['magnetization_mbgs'] for res in all_results]))
 
-    for i, Delta_mean in enumerate(Delta_mean_ls):
-        for j, Delta_local in enumerate(Delta_local_ls):
-            print(f"Calculating for Delta_mean={Delta_mean}, Delta_local={Delta_local}...")
-
-            all_results = repeat_quantities_general(N, t_ls, H_int_, Delta_local, Delta_mean, n_repeats, func = all_quantites_one_time, fileprefix='fig1',dir_root=dir_root, **kwargs)
-
-            
-            vn_time_all = np.array([res['vn_time'] for res in all_results])
-            vn_time = np.mean(vn_time_all, axis=0)
-            
-    
-                
-            # (d) entropy in time
-            # vn_time_all has shape (n_repeats, n_time_points)
-            # Plot individual realizations (each row is one realization)
-            # for k in range(vn_time_all.shape[0]):  # Plot all individual realizations
-            #     axs[1, 1].plot(
-            #         t_ls, vn_time_all[k],
-            #         linestyle=linestyles[j], alpha=0.03, color=colors2[j], linewidth=2
-            #     )
-            
-            axs.plot(
-                t_ls, vn_time,
-                linestyle=linestyles[j], alpha=alpha, color=colors[j], linewidth=6, label=fr'$\Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g} J$'
+            mag_mean = np.asarray(mag_vals, dtype=np.float64)
+            axs[0].plot(
+                np.asarray(Delta_i_avg_ls_mag, dtype=np.float64) / J_value,
+                mag_mean / n_q,
+                alpha=alpha,
+                label=fr'$\Delta_{{\mathrm{{local}}}} = {Delta_local/J_value:.3g}J$',
+                linewidth=6,
+                linestyle=linestyles[j % len(linestyles)],
+                color=colors[j % len(colors)],
             )
 
- 
+        if n_q == n_q_ls[-1]:
+            x = np.arange(n_q + 1)
+            bar_width = 0.4
 
+            one_p_means = np.zeros((len(Delta_i_avg_ls_one_P), len(Delta_i_std_ls), n_q + 1), dtype=np.float64)
+            for i, Delta_mean in enumerate(Delta_i_avg_ls_one_P):
+                for j, Delta_local in enumerate(Delta_i_std_ls):
+                    all_results = repeat_quantities_general(
+                        n_q,
+                        None,
+                        H_int_,
+                        Delta_local,
+                        Delta_mean,
+                        n_repeats,
+                        dir_root=dir_main,
+                        fileprefix='fig2_onep',
+                        func=_mag_onep_one_time,
+                        Omega=Omega,
+                        phi=phi,
+                        threshold=threshold,
+                        NN_only=NN_only,
+                    )
 
-    axs.set_xlabel(r'$t \, (\mu \mathrm{s})$', fontsize=1.3*fontsize)
-    axs.set_ylabel(r'$S_{1, \, A}(t)$', fontsize=1.3*fontsize)
+                    one_p_arr = np.asarray([res['one_P'] for res in all_results], dtype=np.float64)
+                    one_p_means[i, j] = np.mean(one_p_arr, axis=0)
 
-    interest_ls = [1e-3, 0.2, 1, 2]
-    for t in interest_ls:
-        axs.axvline(x=t, color='gray', linestyle=':', linewidth=6, alpha=1)
+                    if i == 0 and j == 0:
+                        cached_eval_sets = [np.asarray(res['evals'], dtype=np.float64) for res in all_results]
 
+                    offset = (i * len(Delta_i_std_ls) + j) - (len(Delta_i_avg_ls_one_P) * len(Delta_i_std_ls) - 1) / 2
+                    axs[1].bar(
+                        x + offset * bar_width,
+                        one_p_means[i, j],
+                        width=bar_width,
+                        alpha=alpha,
+                        color=colors2[i % len(colors2)][j % len(colors2[0])],
+                        label=fr'$\Delta_{{\mathrm{{local}}}}={Delta_local/J_value:.3g}J$'
+                    )
 
-    
+    axs[0].set_xlabel(r'$\langle \Delta_i \rangle / J$', fontsize=fontsize * 1.2)
+    axs[0].set_ylabel(r'$\langle \mathcal{M} \rangle / N$', fontsize=fontsize * 1.2)
+    axs[1].set_xlabel(r'$N_r$', fontsize=fontsize * 1.2)
+    axs[1].set_ylabel(r'$P(N_r)$', fontsize=fontsize * 1.2)
+    axs[0].legend(loc='upper right', fontsize=fontsize * 0.9)
+    axs[1].legend(loc='upper left', bbox_to_anchor=(-0.018, 1), fontsize=fontsize * 0.9)
 
-   
-     # For each axes (including inset)
-   
-    style_axis(axs, fontsize=fontsize)
+    labels = [r'$\sf{\textbf{a}}$', r'$\sf{\textbf{b}}$']
+    for ax, lab in zip(axs.flat, labels):
+        ax.text(-0.15, 1.05, lab, transform=ax.transAxes, fontsize=fontsize * 1.2)
 
+    for ax in [axs[0], axs[1]]:
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(2)
+        ax.minorticks_on()
+        ax.tick_params(axis='both', which='major', top=True, right=True, bottom=True, left=True)
+        ax.tick_params(axis='both', which='minor', top=True, right=True, bottom=True, left=True, length=4)
+        ax.set_box_aspect(1)
+        style_axis(ax, fontsize=fontsize)
 
-    # axs.set_ylim(-0.1, 2.2)
     plt.tight_layout()
-    manager = ExptStore(dir_root)
-    payload = {
-        "N": N,
-        "t_ls": t_ls.tolist() if isinstance(t_ls, np.ndarray) else t_ls,
-        "Delta_local_ls": Delta_local_ls,
-        "Delta_mean_ls": Delta_mean_ls,
-        "n_repeats": n_repeats,
-    }
-    extr = 'all_h'
-    if 'threshold' in kwargs:
-        threshold = kwargs['threshold']
-        if threshold > 0:
-            payload['threshold'] = threshold
-    if 'Omega' in kwargs:
-        if kwargs['Omega'] != 15.8:
-            payload['Omega'] = kwargs['Omega']
-    if 'NN_only' in kwargs:
-        if kwargs['NN_only']:
-            payload['NN_only'] = kwargs['NN_only']
-    if 'middle_h_1' in kwargs:
-        if kwargs['middle_h_1']:
-            payload['middle_h_1'] = kwargs['middle_h_1']
-            extr = 'middle_h_1'
-    else:
-        extr = 'all_h'
 
-    uid, added = manager.add(payload, timestamp=0)
-    results_dir = os.path.join(dir_root, "results")
+    manager = ExptStore(dir_main)
+    payload = {
+        'type': 'figure_2',
+        'Delta_i_avg_ls_mag': _to_list(Delta_i_avg_ls_mag),
+        'Delta_i_avg_ls_one_P': _to_list(Delta_i_avg_ls_one_P),
+        'Delta_i_std_ls': _to_list(Delta_i_std_ls),
+        'n_q_ls': _to_list(n_q_ls),
+        'n_repeats': int(n_repeats),
+        'J_value': float(J_value),
+        'force_recompute': bool(force_recompute),
+        'Omega': float(Omega),
+        'phi': float(phi),
+        'threshold': float(threshold),
+        'NN_only': bool(NN_only),
+    }
+    uid, _ = manager.add(payload, timestamp=0)
+    results_dir = os.path.join(dir_main, 'results')
     os.makedirs(results_dir, exist_ok=True)
-    out = os.path.join(results_dir, f"fig1_donly_{uid}_{extr}.pdf")
+
+    out = os.path.join(results_dir, f'fig2_mag_oneP_{uid}.pdf')
     plt.savefig(out)
     plt.close(fig)
+    print(f"Figure 2 saved to {out}")
 
-    
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    ax.set_xlabel(r'$\varepsilon / J$', fontsize=fontsize * 0.8)
+    ax.set_ylabel(r'$\varrho(\varepsilon)$', fontsize=fontsize * 0.8)
+    if cached_eval_sets is None or len(cached_eval_sets) == 0:
+        print("No eigenvalues found for histogram; skipping eigenvalue histogram figure.")
+        plt.close(fig)
+        return
+
+    eigenvals = np.concatenate(cached_eval_sets).flatten() / J_value
+    counts, edges = np.histogram(eigenvals, bins=100, density=True)
+    centers = (edges[:-1] + edges[1:]) / 2
+    ax.plot(centers, counts, linestyle='-', alpha=alpha, color='black', linewidth=3)
+
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(2)
+    ax.minorticks_on()
+    ax.tick_params(axis='both', which='minor', top=True, right=True, bottom=True, left=True, length=4)
+    ax.tick_params(axis='both', which='major', top=True, right=True, bottom=True, left=True, length=4)
+    ax.set_box_aspect(1)
+    style_axis(ax, fontsize=fontsize)
+
+    out_hist = os.path.join(results_dir, f'fig2_eigenvalue_hist_{uid}.pdf')
+    plt.savefig(out_hist)
+    plt.close(fig)
+    print(f"Figure 2 eigenvalue histogram saved to {out_hist}")
+
 
 if __name__ == "__main__":
     N = 6
@@ -1135,16 +1146,33 @@ if __name__ == "__main__":
     # Delta_local_ls = [-0.5*J] 
     Delta_mean_ls = [0.5*J] 
     n_repeats = 1000
-    # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False)
+    # fig_signatures(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False)
 
     # make_fig1_dos(N, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=False, x_min_max=[(-25,25), None])
+    
+    
+    # fig_signatures(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=True)
+    # fig_signatures(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1_test', fontsize=20, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False, middle_h_1=True)
+    # fig_signatures(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1_test', fontsize=20, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False, middle_h_1=False)
 
-    make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, 'fig1', fontsize=35, alpha=0.8, J=5.42)
+    base_drive = {
+                "ev_params": {
+                    'Omega': 15.8,
+                    'phi': 0,
+                    'a': 10,
+                    'eps_std': 0,
+                    't_ramp': 0.0632,
+                    'n_q': 6
+                },
+                'n_ens': 500
+            }
     
-    
-    # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1', fontsize=40, alpha=0.8, J=5.42, threshold=0.0, Omega = 2*J, NN_only=True)
-    # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1_test', fontsize=20, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False, middle_h_1=True)
-    # make_fig1_fghi(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, dir_root='fig1_test', fontsize=20, alpha=0.8, J=5.42, threshold=0.0, Omega = 15.8, NN_only=False, middle_h_1=False)
+    Delta_i_avg_ls_mag = np.linspace(-15, 15, 10) * J
+    Delta_i_avg_ls_one_P = [0.5*J]
+    Delta_i_std_ls = [-0.5*J, -10*J]
+    n_q_ls = [6]
+
+    magnetisation_fig(base_drive, Delta_i_avg_ls_mag, Delta_i_avg_ls_one_P, Delta_i_std_ls, n_q_ls, dir_main='fig2', alpha=0.8, fontsize=40, force_recompute=False, J_value=5.42, n_repeats=1000)
 
     
     

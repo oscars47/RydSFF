@@ -1,7 +1,12 @@
-from expt_file_manager import ExptStore
+"""
+checking dependence of median eigenvalue on Delta_mean, for different values of Delta_local
+"""
+
+
+from QuEraToolbox.expt_file_manager import ExptStore
 from fig_styling import style_axis
-from fig1_fghi import diagonalize_aquila, repeat_quantities_general
-from hamiltonian import drive_main, get_h_ls, get_J_arr, H_int
+from fig_supplemental_signatures import diagonalize_aquila, repeat_quantities_general
+from QuEraToolbox.hamiltonian import get_h_ls, get_J_arr, H_int
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np

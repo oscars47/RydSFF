@@ -1,0 +1,4 @@
+bloqade_analog
+matplotlib
+qutip
+uncertainties
