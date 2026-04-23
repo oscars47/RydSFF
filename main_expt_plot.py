@@ -1117,7 +1117,7 @@ def time_disorder_protocol(
         ax_time.text(-0.15, 1.05, r'$\sf{\textbf{a}}$', transform=ax_time.transAxes, fontsize=fontsize * 1.2)
         ax_dis.text(-0.15, 1.05, r'$\sf{\textbf{b}}$', transform=ax_dis.transAxes, fontsize=fontsize * 1.2)
 
-    ax_time.legend(loc='lower right', bbox_to_anchor=(1.02, -0.045), fontsize=fontsize * 0.8, frameon=False)
+    ax_time.legend(loc='lower right', bbox_to_anchor=(1.02, -0.045), fontsize=fontsize * 0.8, frameon=False, ncol=3, labelspacing=0.2)
 
 
    

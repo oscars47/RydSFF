@@ -316,8 +316,8 @@ def make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, di
     \usepackage{newtxtext,newtxmath}
     """)
 
-    colors = ['red', 'black']
-    linestyles = ['-', '--',]
+    colors = ['black', 'red']
+    # linestyles = ['-', '--',]
 
     fig, axs = plt.subplots(1, 1, figsize=(10*1.85, 10))
 
@@ -341,7 +341,7 @@ def make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, di
             )
             axs.plot(
                 t_ls, renyi2_time,
-                linestyle='--', alpha=alpha*0.5, color=colors[j], linewidth=4.5, label=fr'$S_{{2, A}}, \, \Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g} J$')
+                linestyle='--', alpha=alpha*0.5, color=colors[j], linewidth=5, label=fr'$S_{{2, A}}, \, \Delta_{{\mathrm{{local}}}}={Delta_local/J:.3g} J$')
 
     axs.set_xlabel(r'$t \, (\mu \mathrm{s})$', fontsize=1.3*fontsize)
     # axs.set_ylabel(
@@ -358,7 +358,7 @@ def make_fig1_entropy_only(N, t_ls, Delta_local_ls, Delta_mean_ls, n_repeats, di
         r'$\;\,S_{2,\,A}(t)$',
         xy=(-0.11, 0.63), xycoords='axes fraction',
         fontsize=1.3*fontsize, rotation=90,
-        ha='center', va='center', color='lightgray',
+        ha='center', va='center', color='gray',
     )
 
     interest_ls = [1e-3, 0.2, 1, 2]
@@ -423,7 +423,7 @@ if __name__ == "__main__":
     J = 5.42
     t_ls = np.logspace(-2, np.log10(4), 500) 
     # Delta_local_ls = [-0.5*J] 
-    Delta_local_ls = [-10*J, -0.5*J] 
+    Delta_local_ls = [-0.5*J, -10*J] 
     # Delta_mean_ls = [0.5*J] 
     # Delta_local_ls = [-0.5*J] 
     Delta_mean_ls = [0.5*J] 

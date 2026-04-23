@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from QuEraToolbox.hamiltonian import get_h_ls
 from process_rbp import get_all_single_hams_rand, get_all_single_hams_rand_calib_check, process_bitstrings, get_all_qutip_probs
-from QuEraToolbox.helper_rbp import report_to_bins, bins_to_probs, apply_readout_noise, restrict_probabilities
+from QuEraToolbox.helper_rbp import report_to_bins, bins_to_probs, restrict_probabilities, apply_readout_channel
 from QuEraToolbox.random_bp_prep import create_parallelized_x
 from QuEraToolbox.expt_file_manager import ExptStore, unique_filename
 import matplotlib.pyplot as plt
@@ -14,7 +14,6 @@ from tqdm import trange
 from copy import deepcopy
 from copy import deepcopy
 
-from QuEraToolbox.helper_rbp import restrict_probabilities, bins_to_probs, apply_readout_noise, report_to_bins 
 
 # -------- parse tasks
 def read_expt_task_stem(stem_task_name, dir_root):
@@ -680,7 +679,7 @@ def compare_single_qubit_effect_phiquenches(
                                 epsilon_r = epsilon_r_ls[i][j][l]
                                 epsilon_g = epsilon_g_ls[i][j][l]
                                 print("APPLYING READOUT CORRECTION", epsilon_r, epsilon_g)
-                                probs = apply_readout_noise(probs, epsilon_g, epsilon_r)
+                                probs = apply_readout_channel(probs, epsilon_g, epsilon_r)
                                 print("PROBS", probs)
                                 assert np.isclose(np.sum(probs), 1.0), f"probs do not sum to 1 after correction: sum={np.sum(probs)}"
 

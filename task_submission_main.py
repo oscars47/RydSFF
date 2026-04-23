@@ -437,11 +437,17 @@ def _calculate_chunk_params(task_name, dir_root, override_num_ham_per_chunk=None
 
 def schedule_run_all_chunks(task_name, name, is_expt_data, timestamp, dir_root, specific_chunk_idx=None, override_num_ham_per_chunk=1, cancel_Rabi=False):
     # Read all JSON files locally before submitting jobs to AWS
-    print("[schedule_run_all_chunks] Reading JSON files locally...")
+
+    if task_name == 'task_rabi-only':
+         time_per_ham, num_ham_per_chunk, total_hams, num_chunks, hams_in_chunk = 0, 1, 1, 1, lambda idx: 1
+    else:
+        
+        print("[schedule_run_all_chunks] Reading JSON files locally...")
+    
+        time_per_ham, num_ham_per_chunk, total_hams, num_chunks, hams_in_chunk = _calculate_chunk_params(task_name, dir_root, override_num_ham_per_chunk=override_num_ham_per_chunk)
+    
     data_subdir = get_subdirname(name, task_name, timestamp, preset_opt=None)
     all_json_data = _read_all_json_files_locally(dir_root, data_subdir)
-    
-    time_per_ham, num_ham_per_chunk, total_hams, num_chunks, hams_in_chunk = _calculate_chunk_params(task_name, dir_root, override_num_ham_per_chunk=override_num_ham_per_chunk)
 
 
     # Validate that we don't have empty chunks at the end

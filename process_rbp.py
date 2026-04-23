@@ -10,9 +10,8 @@ from copy import deepcopy
 from collections import Counter
 from uncertainties import UFloat, ufloat
 from uncertainties import unumpy as unp
-from QuEraToolbox.helper_rbp import report_to_bins, bins_to_probs, get_hamming_matrix, est_purity, est_fidelity, get_ee, get_sp, monte_carlo_multinomial_pvalue
+from QuEraToolbox.helper_rbp import get_hamming_matrix, est_purity, est_fidelity, get_ee, get_sp
 from QuEraToolbox.random_bp_qutip import get_probs_seq_ls
-from scipy.stats import chisquare
 from process_rbp_calib_helper import get_calib_task
 
 
