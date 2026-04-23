@@ -70,12 +70,12 @@ def process_expt_wrapper(dir_root, suid, q_index=-1, show_qutip=True, open_dynam
     process_expts(suid, dir_root, q_index=q_index, show_qutip=show_qutip, open_dynamics=open_dynamics, num_repeats_coherent_noise=num_repeats_coherent_noise, num_t_qutip_points=num_t_qutip_points, epsilon_r=epsilon_r_ls, epsilon_r_unc=epsilon_r_unc_ls, epsilon_g=epsilon_g_ls, epsilon_g_unc=epsilon_g_unc_ls, default_color=True)
 
 
-def run_benchmark_expt(dir_root, chunk_idx, expt_task, is_expt_data = False, N = 6, num_t_plateau_ls = 10, n_shots = 100, uniform_Omega_Delta_ramp = False, start_Delta_from0=False):        
+def run_benchmark_expt(dir_root, chunk_idx, expt_task, is_expt_data = False, N = 6, num_t_plateau_ls = 10, n_shots = 100, uniform_Omega_Delta_ramp = False, start_Delta_from0=False, Omega_delay_time=0):        
     res_idx_ls = list(range(N//2)) ## only need readout error for first half of qubits    
 
     tasks_ls = []
     for res_idx in res_idx_ls:
-        expt_task_name = gen_task_wrapper(dir_root, N=N, num_t_plateau_ls=num_t_plateau_ls, n_shots=n_shots, res_idx=res_idx, Delta_local=-125, t_start=0.0, uniform_Omega_Delta_ramp=uniform_Omega_Delta_ramp, start_Delta_from0=start_Delta_from0, non_uniform_t_sampling=True)
+        expt_task_name = gen_task_wrapper(dir_root, N=N, num_t_plateau_ls=num_t_plateau_ls, n_shots=n_shots, res_idx=res_idx, Delta_local=-125, t_start=0.0, uniform_Omega_Delta_ramp=uniform_Omega_Delta_ramp, start_Delta_from0=start_Delta_from0, non_uniform_t_sampling=True, Omega_delay_time=Omega_delay_time)
         tasks_ls.append(expt_task_name)
         
     preset_opts_ls = [None] * len(tasks_ls)

@@ -56,6 +56,7 @@ def _maybe_run_rabi_calibration(cancel_Rabi, dir_root, chunk_idx, task_name, is_
         n_shots=n_shots_rabi,
         uniform_Omega_Delta_ramp=False,
         start_Delta_from0=False,
+        Omega_delay_time=0
     )
     _RABI_CALIB_LAST_UTC_DATE = today_utc
     return True
@@ -258,8 +259,10 @@ if _FORCE_TRY_HYBRID:
                     n_shots_rabi,
                     mode_label="in hybrid mode",
                 )
+
+            if task_name is not "task_rabi-only":
         
-            return execute_bloqade_task_chunk(chunk_idx, num_ham_in_chunk, task_name, name, is_expt_data, timestamp, dir_root, force_recompute=True, debug=False, preset_opt=None, data_subdir=None, save_mode=save_mode, backup_dirs=None, after_how_many_ham_run_check=None, ham_check_dir_main = None, allow_override_name = False)
+                return execute_bloqade_task_chunk(chunk_idx, num_ham_in_chunk, task_name, name, is_expt_data, timestamp, dir_root, force_recompute=True, debug=False, preset_opt=None, data_subdir=None, save_mode=save_mode, backup_dirs=None, after_how_many_ham_run_check=None, ham_check_dir_main = None, allow_override_name = False)
     
         _IS_AWS_ENVIRONMENT = True
         
@@ -277,8 +280,9 @@ if _FORCE_TRY_HYBRID:
                     is_expt_data,
                     n_shots_rabi,
                 )
-
-            return execute_bloqade_task_chunk(chunk_idx, num_ham_in_chunk, task_name, name, is_expt_data, timestamp, dir_root, force_recompute=True, debug=False, preset_opt=None, data_subdir=None, save_mode=save_mode, backup_dirs=None, after_how_many_ham_run_check=None, ham_check_dir_main = None, allow_override_name = False)
+            if task_name is not "task_rabi-only":
+        
+                return execute_bloqade_task_chunk(chunk_idx, num_ham_in_chunk, task_name, name, is_expt_data, timestamp, dir_root, force_recompute=True, debug=False, preset_opt=None, data_subdir=None, save_mode=save_mode, backup_dirs=None, after_how_many_ham_run_check=None, ham_check_dir_main = None, allow_override_name = False)
         
         _IS_AWS_ENVIRONMENT = False
 else:
@@ -295,7 +299,9 @@ else:
                 n_shots_rabi,
             )
 
-        return execute_bloqade_task_chunk(chunk_idx, num_ham_in_chunk, task_name, name, is_expt_data, timestamp, dir_root, force_recompute=True, debug=False, preset_opt=None, data_subdir=None, save_mode=save_mode, backup_dirs=None, after_how_many_ham_run_check=None, ham_check_dir_main = None, allow_override_name = False)
+        if task_name is not "task_rabi-only":
+        
+            return execute_bloqade_task_chunk(chunk_idx, num_ham_in_chunk, task_name, name, is_expt_data, timestamp, dir_root, force_recompute=True, debug=False, preset_opt=None, data_subdir=None, save_mode=save_mode, backup_dirs=None, after_how_many_ham_run_check=None, ham_check_dir_main = None, allow_override_name = False)
         
     _IS_AWS_ENVIRONMENT = False
 
@@ -623,7 +629,7 @@ def save_all_suids(dir_root):
 def extract_readouterror_rabi(main_dir,chosen_task, total_ens, N=6, force_recompute=True):
     main_rabi_csv = f"{N}rabi_calib.csv"
     rabi_csv_path = os.path.join(main_dir, main_rabi_csv)
-    if force_recompute:
+    if force_recompute or not os.path.exists(rabi_csv_path):
         ### use do_preset ###
         # step 1: run processing
         suid_ls = ret_all_suids(main_dir)

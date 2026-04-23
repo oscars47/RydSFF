@@ -1066,12 +1066,23 @@ def do_preset(task_name, timestamp, t_plateau_qutip, ax=None, color_ls = ['purpl
             density_expt_ls = [density_expt_ls[i] for i in sorted_indices]
 
         # ax.scatter(t_plateau_ls, density_expt_ls, label=rf'$\mathrm{{Aquila}}$', marker='s', color='red')
+        density_expt_ls_orig = deepcopy(density_expt_ls)
         density_expt_ls = [density_expt_ls_t[q_index] for density_expt_ls_t in density_expt_ls]
+        density_expt_err_ls_orig = deepcopy(density_expt_err_ls)
         density_expt_err_ls = [density_expt_err_ls_t[q_index] for density_expt_err_ls_t in density_expt_err_ls]
         # density_expt_ls = np.array(density_expt_ls)
         # density_expt_err_ls = np.array(density_expt_err_ls)
 
         ax.errorbar(t_plateau_ls, density_expt_ls, yerr=density_expt_err_ls, label=rf'$\mathrm{{Aquila}}$', fmt='s', markerfacecolor=color_ls[1],   markeredgecolor='black', markeredgewidth=2, markersize=15, ecolor=color_ls[1], elinewidth=3, capsize=6)
+
+        ## plot all other expt points as well for different qubits
+        add_label=True
+        for q_idx_other in range(N):
+            if q_idx_other != q_index:
+                density_expt_ls_other = [density_expt_ls_t[q_idx_other] for density_expt_ls_t in density_expt_ls_orig]
+                density_expt_err_ls_other = [density_expt_err_ls_t[q_idx_other] for density_expt_err_ls_t in density_expt_err_ls_orig]
+                ax.errorbar(t_plateau_ls, density_expt_ls_other, yerr=density_expt_err_ls_other, label=rf'$\mathrm{{Aquila, index\, detuned}}$' if add_label else None, fmt='s', markerfacecolor='gray',   markeredgecolor='gray', markeredgewidth=2, markersize=15, ecolor='gray', elinewidth=3, capsize=6, alpha=0.6)
+                add_label=False
 
         #### GETTING THE FIT PARAMS HERE!!!
         if not do_ramsey:
