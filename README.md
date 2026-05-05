@@ -1,5 +1,5 @@
 # RydSFF
-Repository to run real experiments, simulated experiments, and purely numerical calculations for QuEra's Aquila device for our paper (arXiv:)
+Repository to run real experiments, simulated experiments, and purely numerical calculations for QuEra's Aquila device for our paper (arXiv:https://arxiv.org/abs/2604.24854)
 
 This code is not yet refined enough to contain a tutorial for using AWS Braket, so if you have any questions about that in particular or want to discuss other parts of the code, please contact me at oscar.scholin@physics.ox.ac.uk or orsa2020@mymail.pomona.edu.
 
