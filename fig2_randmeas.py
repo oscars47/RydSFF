@@ -5,7 +5,7 @@ from QuEraToolbox.random_bp_qutip import get_probs_seq_ls
 from master_params_rbp import gen_seq_ls_pre
 import matplotlib.pyplot as plt 
 import matplotlib as mpl
-from numerics_plots_clean import style_axis
+from fig_styling import style_axis
 
 def get_bloch_coords(rho_single_qubit):
     a_x = 2 * rho_single_qubit[1, 0].real
@@ -142,7 +142,7 @@ def compare_methods(n_U, N=6, rand_seed=47, t_plateau=1.0, a = 10, Delta_mean = 
 
     return bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haar, cont_bloch_coords, h_ls
 
-def make_figure(bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haar, cont_bloch_coords, h_ls, fontsize=16, main_dir="gate_demo"):
+def make_figure(bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haar, cont_bloch_coords, h_ls, qubit_index, fontsize=16, main_dir="gate_demo"):
     """
     bloch_coords_no_gate: single (x, y, z) for the bare state without any gates
     bloch_coords_global_gate: list of length n_U sublists for each (x, y, z) coorindate for each element in the sequence 
@@ -477,7 +477,7 @@ def make_figure(bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haa
 
     # plt.tight_layout()
     os.makedirs(main_dir, exist_ok=True)
-    plt.savefig(f"{main_dir}/compare_global_haar_{list(h_ls)}.pdf", bbox_inches='tight')
+    plt.savefig(f"{main_dir}/compare_global_haar_{list(h_ls)}_{qubit_index}.pdf", bbox_inches='tight')
     # plt.show()
     
 if __name__ == "__main__":
@@ -488,9 +488,10 @@ if __name__ == "__main__":
 
     plot_dir = "gate_demo_correct"
     h_ls = [0.5351778897933708, 0.8762572741949045, 0.1483627705168249, 0.7102834530996069, 0.6273169859842198, 0.4275076110819733]
+    qubit_index = 2
 
 
 
-    bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haar, cont_bloch_coords, h_ls = compare_methods(n_U, N=N, t_plateau=t_plateau, h_ls=h_ls, n_gate=16)
+    bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haar, cont_bloch_coords, h_ls = compare_methods(n_U, N=N, t_plateau=t_plateau, h_ls=h_ls, n_gate=16, qubit_index=qubit_index)
 
-    make_figure(bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haar, cont_bloch_coords, h_ls, fontsize=47, main_dir=plot_dir)
+    make_figure(bloch_coords_no_gate, bloch_coords_global_gate, bloch_coords_haar, cont_bloch_coords, h_ls, qubit_index=qubit_index, fontsize=47, main_dir=plot_dir)
